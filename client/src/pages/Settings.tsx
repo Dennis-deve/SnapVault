@@ -6,19 +6,28 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { ArrowLeft } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/components/ThemeProvider";
+import { useAuth } from "@/lib/auth";
 
 export default function Settings() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { theme, setTheme } = useTheme();
+  const { user, logout } = useAuth();
 
-  const [email, setEmail] = useState("user@example.com");
+  const [email, setEmail] = useState("");
   const [pin, setPin] = useState("");
   const [publicSharing, setPublicSharing] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      setEmail(user.email);
+      setPin(user.pin || "");
+    }
+  }, [user]);
 
   const handleSave = () => {
     toast({
@@ -27,19 +36,28 @@ export default function Settings() {
     });
   };
 
-  const handleLogout = () => {
-    toast({
-      title: "Logged out",
-      description: "You have been logged out successfully.",
-    });
-    setLocation("/");
+  const handleLogout = async () => {
+    try {
+      await logout();
+      toast({
+        title: "Logged out",
+        description: "You have been logged out successfully.",
+      });
+      setLocation("/");
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to log out",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
     <div className="min-h-screen bg-background">
       <Navbar
         showMenu={false}
-        user={{ email }}
+        user={user ? { email: user.email } : undefined}
         onSettingsClick={() => {}}
         onLogout={handleLogout}
       />

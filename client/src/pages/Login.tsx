@@ -5,23 +5,51 @@ import { Card } from "@/components/ui/card";
 import { useLocation } from "wouter";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/auth";
 import logoImage from "@assets/generated_images/SnapVault_inverted_V_logo_lightning_a19e02be.png";
 
 export default function Login() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [pin, setPin] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Login attempt:", { email, password, pin });
-    toast({
-      title: "Success!",
-      description: "Welcome back to SnapVault",
-    });
-    setLocation("/dashboard");
+    
+    // Validate that at least one credential is provided
+    if (!password && !pin) {
+      toast({
+        title: "Error",
+        description: "Please provide either a password or Magic PIN",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setIsLoading(true);
+    
+    try {
+      // If both password and PIN are provided, prioritize password
+      // If only PIN is provided (and password is empty), try PIN login
+      await login(email, password || pin);
+      toast({
+        title: "Success!",
+        description: "Welcome back to SnapVault",
+      });
+      setLocation("/dashboard");
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Invalid credentials",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -53,7 +81,7 @@ export default function Login() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
+            <Label htmlFor="password">Password (or use PIN below)</Label>
             <Input
               id="password"
               type="password"
@@ -62,12 +90,11 @@ export default function Login() {
               onChange={(e) => setPassword(e.target.value)}
               className="rounded-2xl"
               data-testid="input-password"
-              required
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="pin">Magic PIN (Optional)</Label>
+            <Label htmlFor="pin">Magic PIN (Quick Login)</Label>
             <Input
               id="pin"
               type="text"
@@ -78,15 +105,19 @@ export default function Login() {
               data-testid="input-pin"
               maxLength={4}
             />
+            <p className="text-xs text-muted-foreground">
+              Enter either your password or PIN to log in
+            </p>
           </div>
 
           <Button
             type="submit"
             className="w-full rounded-2xl"
             size="lg"
+            disabled={isLoading}
             data-testid="button-login-submit"
           >
-            Log In
+            {isLoading ? "Logging in..." : "Log In"}
           </Button>
         </form>
 

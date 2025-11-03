@@ -5,18 +5,22 @@ import { Card } from "@/components/ui/card";
 import { useLocation } from "wouter";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/auth";
 import logoImage from "@assets/generated_images/SnapVault_inverted_V_logo_lightning_a19e02be.png";
 
 export default function Signup() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { signup } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [pin, setPin] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
     if (password !== confirmPassword) {
       toast({
         title: "Error",
@@ -25,12 +29,25 @@ export default function Signup() {
       });
       return;
     }
-    console.log("Signup attempt:", { email, password, pin });
-    toast({
-      title: "Account created!",
-      description: "Welcome to SnapVault",
-    });
-    setLocation("/dashboard");
+    
+    setIsLoading(true);
+    
+    try {
+      await signup(email, password, pin || undefined);
+      toast({
+        title: "Account created!",
+        description: "Welcome to SnapVault",
+      });
+      setLocation("/dashboard");
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create account",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -110,9 +127,10 @@ export default function Signup() {
             type="submit"
             className="w-full rounded-2xl"
             size="lg"
+            disabled={isLoading}
             data-testid="button-signup-submit"
           >
-            Sign Up
+            {isLoading ? "Creating account..." : "Sign Up"}
           </Button>
         </form>
 

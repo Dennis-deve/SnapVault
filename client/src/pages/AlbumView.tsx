@@ -8,6 +8,9 @@ import { ArrowLeft, MoreVertical, Upload } from "lucide-react";
 import { useState } from "react";
 import { useLocation, useRoute } from "wouter";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/auth";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,20 +22,36 @@ export default function AlbumView() {
   const [, setLocation] = useLocation();
   const [, params] = useRoute("/album/:id");
   const { toast } = useToast();
+  const { user, logout } = useAuth();
 
   const [viewerOpen, setViewerOpen] = useState(false);
   const [selectedMedia, setSelectedMedia] = useState<any>(null);
 
-  // todo: remove mock functionality
-  const album = { id: params?.id, name: "Vacation 2025" };
-  const [mediaItems] = useState([
-    { id: "1", filename: "IMG_1001.jpg", type: "image/jpeg", path: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400" },
-    { id: "2", filename: "IMG_1002.jpg", type: "image/jpeg", path: "https://images.unsplash.com/photo-1511593358241-7eea1f3c84e5?w=400" },
-    { id: "3", filename: "VID_1003.mp4", type: "video/mp4" },
-    { id: "4", filename: "IMG_1004.jpg", type: "image/jpeg", path: "https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=400" },
-    { id: "5", filename: "IMG_1005.jpg", type: "image/jpeg", path: "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=400" },
-    { id: "6", filename: "IMG_1006.jpg", type: "image/jpeg", path: "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=400" },
-  ]);
+  const albumId = params?.id;
+
+  // Fetch album details
+  const { data: album } = useQuery({
+    queryKey: ["/api/albums", albumId],
+    enabled: !!albumId,
+  });
+
+  // Fetch media for this album
+  const { data: mediaItems = [], isLoading: isLoadingMedia } = useQuery({
+    queryKey: ["/api/albums", albumId, "media"],
+    enabled: !!albumId,
+  });
+
+  // Delete album mutation
+  const deleteAlbumMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest(`/api/albums/${albumId}`, {
+        method: "DELETE",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/albums"] });
+    },
+  });
 
   const handleMediaClick = (item: any) => {
     setSelectedMedia(item);
@@ -53,22 +72,46 @@ export default function AlbumView() {
     });
   };
 
-  const handleDelete = () => {
-    toast({
-      title: "Album deleted",
-      description: `"${album.name}" has been deleted.`,
-      variant: "destructive",
-    });
-    setLocation("/dashboard");
+  const handleDelete = async () => {
+    try {
+      await deleteAlbumMutation.mutateAsync();
+      toast({
+        title: "Album deleted",
+        description: `"${album?.name}" has been deleted.`,
+        variant: "destructive",
+      });
+      setLocation("/dashboard");
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete album",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
     <div className="min-h-screen bg-background">
       <Navbar
         showMenu={false}
-        user={{ email: "user@example.com" }}
+        user={user ? { email: user.email } : undefined}
         onSettingsClick={() => setLocation("/settings")}
-        onLogout={() => setLocation("/")}
+        onLogout={async () => {
+          try {
+            await logout();
+            toast({
+              title: "Logged out",
+              description: "You have been logged out successfully.",
+            });
+            setLocation("/");
+          } catch (error) {
+            toast({
+              title: "Error",
+              description: "Failed to log out",
+              variant: "destructive",
+            });
+          }
+        }}
       />
 
       <div className="sticky top-16 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -83,7 +126,7 @@ export default function AlbumView() {
               <ArrowLeft className="h-5 w-5" />
             </Button>
             <h1 className="text-xl font-display font-semibold truncate">
-              {album.name}
+              {album?.name || "Album"}
             </h1>
           </div>
 
@@ -120,7 +163,11 @@ export default function AlbumView() {
       </div>
 
       <main className="container max-w-7xl mx-auto p-4 md:p-6 lg:p-8">
-        {mediaItems.length === 0 ? (
+        {isLoadingMedia ? (
+          <div className="text-center py-12">
+            <p className="text-muted-foreground">Loading media...</p>
+          </div>
+        ) : mediaItems.length === 0 ? (
           <EmptyState
             icon="cloud"
             title="No media yet"

@@ -8,20 +8,36 @@ import { FloatingActionButton } from "@/components/FloatingActionButton";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/auth";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 
 export default function Dashboard() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { user, logout } = useAuth();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
-  // todo: remove mock functionality
-  const [albums, setAlbums] = useState([
-    { id: "1", name: "Vacation 2025", itemCount: 42 },
-    { id: "2", name: "Family Photos", itemCount: 128 },
-    { id: "3", name: "Work Events", itemCount: 35 },
-  ]);
+  // Fetch albums from backend
+  const { data: albums = [], isLoading: isLoadingAlbums } = useQuery({
+    queryKey: ["/api/albums"],
+    enabled: !!user,
+  });
+
+  // Create album mutation
+  const createAlbumMutation = useMutation({
+    mutationFn: async (data: { name: string; description?: string }) => {
+      return apiRequest("/api/albums", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/albums"] });
+    },
+  });
 
   const handleUpload = () => {
     setIsUploading(true);
@@ -42,32 +58,44 @@ export default function Dashboard() {
     }, 300);
   };
 
-  const handleCreateAlbum = (name: string, description?: string) => {
-    const newAlbum = {
-      id: Date.now().toString(),
-      name,
-      itemCount: 0,
-    };
-    setAlbums([...albums, newAlbum]);
-    toast({
-      title: "Album created!",
-      description: `"${name}" has been created successfully.`,
-    });
+  const handleCreateAlbum = async (name: string, description?: string) => {
+    try {
+      await createAlbumMutation.mutateAsync({ name, description });
+      toast({
+        title: "Album created!",
+        description: `"${name}" has been created successfully.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create album",
+        variant: "destructive",
+      });
+    }
   };
 
-  const handleLogout = () => {
-    toast({
-      title: "Logged out",
-      description: "You have been logged out successfully.",
-    });
-    setLocation("/");
+  const handleLogout = async () => {
+    try {
+      await logout();
+      toast({
+        title: "Logged out",
+        description: "You have been logged out successfully.",
+      });
+      setLocation("/");
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to log out",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
     <div className="min-h-screen bg-background">
       <Navbar
         showMenu={false}
-        user={{ email: "user@example.com" }}
+        user={user ? { email: user.email } : undefined}
         onSettingsClick={() => setLocation("/settings")}
         onLogout={handleLogout}
       />
@@ -85,7 +113,11 @@ export default function Dashboard() {
               <h2 className="text-2xl font-display font-semibold">My Albums</h2>
             </div>
 
-            {albums.length === 0 ? (
+            {isLoadingAlbums ? (
+              <div className="text-center py-12">
+                <p className="text-muted-foreground">Loading albums...</p>
+              </div>
+            ) : albums.length === 0 ? (
               <EmptyState
                 icon="folder"
                 title="No albums yet"
@@ -96,7 +128,7 @@ export default function Dashboard() {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 <CreateAlbumCard onClick={() => setShowCreateModal(true)} />
-                {albums.map((album) => (
+                {albums.map((album: any) => (
                   <AlbumCard
                     key={album.id}
                     id={album.id}
