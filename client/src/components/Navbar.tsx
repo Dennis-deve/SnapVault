@@ -1,4 +1,4 @@
-import { Cloud, Menu } from "lucide-react";
+import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -9,6 +9,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ThemeToggle } from "./ThemeToggle";
+import logoImage from "@assets/generated_images/SnapVault_inverted_V_logo_lightning_a19e02be.png";
 
 interface NavbarProps {
   onMenuClick?: () => void;
@@ -37,8 +38,8 @@ export function Navbar({ onMenuClick, showMenu, user, onSettingsClick, onLogout 
             </Button>
           )}
           <div className="flex items-center gap-2">
-            <Cloud className="h-6 w-6 text-primary" />
-            <h1 className="text-xl font-display font-semibold">SnapVault</h1>
+            <img src={logoImage} alt="SnapVault" className="h-8 w-8" />
+            <h1 className="text-xl font-display font-bold text-primary">SnapVault</h1>
           </div>
         </div>
 

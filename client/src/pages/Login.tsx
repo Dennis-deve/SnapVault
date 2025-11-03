@@ -2,10 +2,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
-import { Cloud } from "lucide-react";
 import { useLocation } from "wouter";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
+import logoImage from "@assets/generated_images/SnapVault_inverted_V_logo_lightning_a19e02be.png";
 
 export default function Login() {
   const [, setLocation] = useLocation();
@@ -28,8 +28,8 @@ export default function Login() {
     <div className="min-h-screen bg-gradient-to-b from-background to-primary/5 flex items-center justify-center p-4">
       <Card className="w-full max-w-md p-8 rounded-2xl">
         <div className="flex items-center justify-center gap-2 mb-8">
-          <Cloud className="h-8 w-8 text-primary" />
-          <h1 className="text-2xl font-display font-bold">SnapVault</h1>
+          <img src={logoImage} alt="SnapVault" className="h-10 w-10" />
+          <h1 className="text-2xl font-display font-bold text-primary">SnapVault</h1>
         </div>
 
         <h2 className="text-3xl font-display font-semibold text-center mb-2">Welcome back</h2>

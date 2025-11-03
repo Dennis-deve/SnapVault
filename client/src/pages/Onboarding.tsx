@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
-import { Cloud } from "lucide-react";
 import { useLocation } from "wouter";
 import heroImage from "@assets/generated_images/Phone_cloud_sync_hero_c881eaf2.png";
+import logoImage from "@assets/generated_images/SnapVault_inverted_V_logo_lightning_a19e02be.png";
 
 export default function Onboarding() {
   const [, setLocation] = useLocation();
@@ -10,8 +10,8 @@ export default function Onboarding() {
     <div className="min-h-screen bg-gradient-to-b from-background to-primary/5 flex items-center justify-center p-4">
       <div className="max-w-2xl w-full space-y-12 text-center">
         <div className="flex items-center justify-center gap-3 mb-8">
-          <Cloud className="h-10 w-10 text-primary" />
-          <h1 className="text-3xl font-display font-bold">SnapVault</h1>
+          <img src={logoImage} alt="SnapVault" className="h-12 w-12" />
+          <h1 className="text-3xl font-display font-bold text-primary">SnapVault</h1>
         </div>
 
         <div className="max-w-md mx-auto">
