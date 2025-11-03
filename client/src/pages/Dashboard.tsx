@@ -1,6 +1,5 @@
 import { Navbar } from "@/components/Navbar";
 import { UploadCard } from "@/components/UploadCard";
-import { StorageCard } from "@/components/StorageCard";
 import { AlbumCard } from "@/components/AlbumCard";
 import { CreateAlbumCard } from "@/components/CreateAlbumCard";
 import { EmptyState } from "@/components/EmptyState";
@@ -75,14 +74,11 @@ export default function Dashboard() {
 
       <main className="container max-w-7xl mx-auto p-4 md:p-6 lg:p-8">
         <div className="space-y-6">
-          <div className="grid gap-6 md:grid-cols-2">
-            <UploadCard
-              onUploadClick={handleUpload}
-              isUploading={isUploading}
-              uploadProgress={uploadProgress}
-            />
-            <StorageCard usedGB={3.2} totalGB={5} />
-          </div>
+          <UploadCard
+            onUploadClick={handleUpload}
+            isUploading={isUploading}
+            uploadProgress={uploadProgress}
+          />
 
           <div>
             <div className="flex items-center justify-between mb-6">

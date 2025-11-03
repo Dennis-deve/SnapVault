@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { ArrowLeft } from "lucide-react";
 import { useState } from "react";
@@ -105,22 +104,6 @@ export default function Settings() {
                 />
                 <p className="text-xs text-muted-foreground">
                   Quick login with just a 4-digit PIN
-                </p>
-              </div>
-            </div>
-          </Card>
-
-          <Card className="p-6">
-            <h2 className="text-lg font-semibold mb-4">Storage</h2>
-            <div className="space-y-4">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-medium">Used Storage</p>
-                  <p className="text-sm text-muted-foreground" data-testid="text-storage">3.2 GB / 5 GB</p>
-                </div>
-                <Progress value={64} className="h-2" />
-                <p className="text-xs text-muted-foreground mt-2">
-                  1.8 GB available
                 </p>
               </div>
             </div>
