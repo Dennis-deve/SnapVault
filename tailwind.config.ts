@@ -9,6 +9,7 @@ export default {
         lg: ".5625rem", /* 9px */
         md: ".375rem", /* 6px */
         sm: ".1875rem", /* 3px */
+        '2xl': "1rem", /* 16px - iOS style rounded corners */
       },
       colors: {
         // Flat / base colors (regular buttons)
@@ -83,9 +84,10 @@ export default {
         },
       },
       fontFamily: {
-        sans: ["var(--font-sans)"],
+        sans: ["Inter", "var(--font-sans)"],
         serif: ["var(--font-serif)"],
         mono: ["var(--font-mono)"],
+        display: ["Poppins", "sans-serif"],
       },
       keyframes: {
         "accordion-down": {

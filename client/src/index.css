@@ -14,9 +14,9 @@
   --elevate-1: rgba(0,0,0, .03);
   --elevate-2: rgba(0,0,0, .08);
 
-  --background: 220 5% 98%;
+  --background: 220 9% 97%;
 
-  --foreground: 220 10% 28%;
+  --foreground: 220 9% 29%;
 
   --border: 220 6% 88%;
 
@@ -76,7 +76,7 @@
   --chart-4: 36 77% 55%;
   --chart-5: 340 75% 55%;
 
-  --font-sans: Open Sans, sans-serif;
+  --font-sans: Inter, sans-serif;
   --font-serif: Georgia, serif;
   --font-mono: Menlo, monospace;
   --radius: .5rem; /* 8px */
