@@ -1,0 +1,287 @@
+🧠 AI App Builder Prompt: SnapVault – Cloud Media Storage App
+🏷️ Project Title
+
+SnapVault – Cloud Media Storage App (Mobile & Web Responsive)
+
+💡 Objective
+
+Create a modern, minimal mobile-first web application that allows users to upload, store, organize, view, and download photos & videos.
+SnapVault solves limited iPhone storage by letting users back up their media directly to the cloud.
+
+🖌️ Visual Identity
+Property	Value
+Primary Color	#4A90E2 (Sky Blue)
+Secondary Color	#F5F7FA (Soft White Background)
+Accent Colors	Green #34D399, Red #EF4444, Text Gray #4B5563
+Fonts	Poppins (headings), Inter (body)
+Border Radius	1rem (rounded-2xl)
+Shadows	Soft, diffuse (similar to iOS cards)
+Transitions	150ms ease-in-out
+Layout Grid	8pt spacing system
+Design Mood	Airy, clean, cloud-inspired, iOS aesthetic
+⚙️ Technology Stack
+
+Frontend: React (with Vite) + Tailwind CSS
+Routing: React Router
+Backend: Node.js + Express + MongoDB (Mongoose)
+Auth: JWT (email/password + optional Magic PIN)
+Storage: Local /uploads directory (extendable to cloud)
+File Uploads: Multer middleware
+Search & Filters: Local filtering (media type, album, date)
+
+🧱 Frontend Architecture
+src/
+├── pages/
+│   ├── Onboarding.jsx
+│   ├── Login.jsx
+│   ├── Signup.jsx
+│   ├── Dashboard.jsx
+│   ├── AlbumView.jsx
+│   ├── Upload.jsx
+│   ├── Search.jsx
+│   ├── Settings.jsx
+│   └── ErrorState.jsx
+├── components/
+│   ├── Navbar.jsx
+│   ├── AlbumCard.jsx
+│   ├── MediaViewer.jsx
+│   ├── UploadButton.jsx
+│   ├── ProgressBar.jsx
+│   ├── Modal.jsx
+│   ├── SearchBar.jsx
+│   └── EmptyState.jsx
+├── utils/
+│   └── api.js
+├── App.jsx
+└── main.jsx
+
+🖼️ Screen Definitions
+🎬 1. Onboarding / Welcome
+
+Hero illustration: phone & cloud graphic.
+
+Text: “Free up your iPhone storage. Save your photos & videos in the cloud.”
+
+Buttons:
+
+Primary: “Get Started” → /signup
+
+Secondary: “Already have an account? Log in”
+
+🔐 2. Signup
+
+Fields: Email, Password, Optional Magic PIN
+
+Button: “Sign Up”
+
+Message: success toast or error alert
+
+Link: “Already have an account? Log in”
+
+🔑 3. Login
+
+Fields: Email, Password or Magic PIN
+
+Button: “Log In”
+
+Link: “Forgot Password?” + “Create Account”
+
+On success → /dashboard
+
+🏠 4. Dashboard
+
+Header:
+
+Left: Logo “SnapVault”
+
+Right: User avatar (opens dropdown: Settings, Logout)
+
+Top Card:
+
+“Upload Photos/Videos” button
+
+Progress bar (hidden until upload)
+
+Albums Grid:
+
+Album thumbnail, name, item count
+
+“+ Create New Album” card
+
+Floating Upload Button (FAB): bottom-right (mobile view)
+
+Background: #F5F7FA
+
+Text: dark gray #4B5563
+
+📁 5. Create Album Modal
+
+Input: Album name + optional description
+
+Buttons: Cancel (gray outline) | Create (blue filled)
+
+Feedback: “Album created!”
+
+🖼️ 6. Album Detail Page
+
+Header: Back arrow ←, album title, edit/delete icons
+
+Grid view: 3 columns (mobile), 5 columns (desktop)
+
+Each media: preview thumbnail with overlay (date/name)
+
+Long-press selection → bottom toolbar (Delete | Move | Share)
+
+Floating Upload Button “+ Add Media”
+
+Click → opens Media Viewer
+
+🎥 7. Media Viewer
+
+Full-screen overlay (white or dark mode)
+
+For images: zoom + swipe navigation
+
+For videos: HTML5 <video controls>
+
+Download button (bottom-right, blue)
+
+Close button (top-right X)
+
+📤 8. Upload Progress
+
+Shows each file name, individual progress bar, cancel option
+
+“All uploads complete!” message → Return to Dashboard
+
+🔍 9. Search / Filter
+
+Search bar (magnifier icon)
+
+Filter chips: File Type, Album, Date Range
+
+Grid of thumbnails
+
+Empty state: illustration + “No results found.”
+
+⚙️ 10. Settings
+
+Sectioned layout:
+
+Account (change email/password)
+
+Magic PIN (optional)
+
+Storage (progress bar: “3.2 GB / 5 GB used”)
+
+Privacy toggle (public sharing)
+
+Appearance toggle (light/dark)
+
+Logout button (red text)
+
+⚠️ 11. Empty & Error States
+
+“No albums yet. Create one to get started.”
+
+“No uploads yet.”
+
+“Something went wrong. Please try again.”
+
+📱 12. Responsive Rules
+
+Mobile (≤480px): Single column, bottom FAB, hamburger menu.
+
+Tablet (≥768px): Two-column grid.
+
+Desktop (≥1200px): Sidebar nav, 4–5 column grid.
+
+🧩 Backend API Endpoints
+Method	Endpoint	Description
+POST	/api/auth/signup	Create new account
+POST	/api/auth/login	Authenticate user
+GET	/api/albums	Get user’s albums
+POST	/api/albums	Create new album
+GET	/api/albums/:id	Get album media
+POST	/api/upload	Upload media file
+DELETE	/api/media/:id	Delete file
+GET	/api/media/:id/download	Download media file
+🧠 Core Logic & Data Structures
+Feature	Implementation
+Authentication	JWT (stored in localStorage)
+Password Security	bcrypt hashing
+Upload Queue	File upload queue using async/await
+Search	Binary search + filter by file name/date
+Album Linking	HashMap (user → albums → media)
+Lazy Loading	Intersection observer for infinite scroll
+File Metadata	Stored in MongoDB (file name, type, date, size, albumId, userId)
+🧭 User Flow Summary
+
+Onboard → Login or Signup
+
+Signup/Login → JWT saved locally
+
+Dashboard → Create album or upload directly
+
+Upload → Show progress, store metadata in DB
+
+Album View → Browse, view, download, or delete files
+
+Settings → Manage account, theme, and storage
+
+Logout → Clear local storage and redirect home
+
+💾 Storage Model Example
+
+User Document
+
+{
+  _id: "user123",
+  email: "user@example.com",
+  passwordHash: "...",
+  pin: "1234",
+  albums: [ "album1", "album2" ]
+}
+
+
+Album Document
+
+{
+  _id: "album1",
+  name: "Vacation 2025",
+  userId: "user123",
+  createdAt: Date.now()
+}
+
+
+Media Document
+
+{
+  _id: "file789",
+  albumId: "album1",
+  userId: "user123",
+  filename: "IMG_2025.jpg",
+  path: "/uploads/IMG_2025.jpg",
+  type: "image/jpeg",
+  size: "2.8MB"
+}
+
+🔄 Interactions
+
+Upload → shows live progress bar (width updates with percentage).
+
+Clicking an image/video → opens Media Viewer overlay.
+
+Download button → triggers backend GET /media/:id/download.
+
+Create Album → opens modal → adds new album card instantly (optimistic update).
+
+Logout → clears JWT → redirects to /login.
+
+🧩 Design Keywords for AI Builder
+
+clean UI, cloud-inspired, blue-white minimal theme, rounded corners, soft shadows, intuitive upload flow, responsive gallery layout, modern dashboard, iOS-like aesthetics, mobile-first layout, animation subtlety, Framer Motion style transitions.
+
+✅ Final Instruction for the AI Builder
+
+Generate all pages, components, and routes above using a mobile-first responsive layout. Apply the defined color palette, typography, and design tokens consistently. Ensure interactive elements (upload, view, download, album creation) are functional. Maintain clean hierarchy and spacing (8pt grid). Optimize for performance and simplicity.
