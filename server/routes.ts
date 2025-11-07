@@ -368,7 +368,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // New Cloudinary upload endpoint
   app.post("/api/upload", requireAuth, upload.single('file'), async (req: Request, res: Response, next: NextFunction) => {
     try {
+      console.log("Upload request received:", {
+        hasFile: !!req.file,
+        bodyKeys: Object.keys(req.body),
+        user: req.user?.id,
+        headers: {
+          contentType: req.headers['content-type'],
+          contentLength: req.headers['content-length']
+        }
+      });
+
       if (!req.file) {
+        console.error("No file in request");
         return res.status(400).json({ message: "No file uploaded" });
       }
 
@@ -385,12 +396,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Determine resource type
       const resourceType = req.file.mimetype.startsWith('video/') ? 'video' : 'image';
 
+      console.log("Uploading to Cloudinary:", {
+        filename: req.file.originalname,
+        size: req.file.size,
+        type: resourceType
+      });
+
       // Upload to Cloudinary
       const cloudinaryUrl = await uploadToCloudinary(
         req.file.buffer,
         req.file.originalname,
         resourceType
       );
+
+      console.log("Upload successful, saving to DB");
 
       // Save to database
       const media = await storage.createMedia(
@@ -406,6 +425,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json(media);
     } catch (error) {
+      console.error("Upload error:", error);
       next(error);
     }
   });

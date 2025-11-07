@@ -18,7 +18,7 @@ import { useState, useRef } from "react";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
-import { getApiUrl } from "@/lib/api";
+import { uploadFile } from "@/lib/upload";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 
@@ -91,20 +91,8 @@ export default function Dashboard() {
           
           await Promise.all(
             batch.map(async (file) => {
-              // Use FormData for Cloudinary upload (much faster than base64!)
-              const formData = new FormData();
-              formData.append('file', file);
-              formData.append('albumId', albumId);
-
-              const response = await fetch(getApiUrl('/api/upload'), {
-                method: 'POST',
-                body: formData,
-                credentials: 'include', // Include session cookie
-              });
-
-              if (!response.ok) {
-                throw new Error(`Upload failed: ${response.statusText}`);
-              }
+              // Use upload helper with JWT authentication for mobile
+              await uploadFile(file, albumId);
 
               uploadedFiles++;
               setUploadProgress(Math.round((uploadedFiles / totalFiles) * 100));
