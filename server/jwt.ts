@@ -49,7 +49,7 @@ export function authenticateToken(req: Request, res: Response, next: NextFunctio
 }
 
 // Optional middleware that allows both session and JWT auth
-export function authenticateFlexible(req: Request, res: Response, next: NextFunction) {
+export async function authenticateFlexible(req: Request, res: Response, next: NextFunction) {
   // Try JWT first
   const authHeader = req.headers.authorization;
   const token = authHeader && authHeader.startsWith("Bearer ") 
@@ -59,14 +59,22 @@ export function authenticateFlexible(req: Request, res: Response, next: NextFunc
   if (token) {
     const payload = verifyToken(token);
     if (payload) {
-      (req as any).userId = payload.userId;
-      return next();
+      // Load user from database and attach to request
+      try {
+        const { storage } = await import("./storage");
+        const user = await storage.getUser(payload.userId);
+        if (user) {
+          (req as any).user = user;
+          return next();
+        }
+      } catch (error) {
+        console.error("Error loading user from JWT:", error);
+      }
     }
   }
 
   // Fall back to session
   if (req.isAuthenticated && req.isAuthenticated()) {
-    (req as any).userId = (req.user as any)?.id;
     return next();
   }
 
