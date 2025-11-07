@@ -4,10 +4,20 @@ import session from "express-session";
 import passport from "passport";
 import cors from "cors";
 import { registerRoutes } from "./routes";
-import { setupVite, serveStatic, log } from "./vite";
 import { setupAuth } from "./auth";
 
 const app = express();
+
+// Simple logging function
+function log(message: string, source = "express") {
+  const formattedTime = new Date().toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
+  console.log(`${formattedTime} [${source}] ${message}`);
+}
 
 // CORS configuration for production deployment
 const allowedOrigins = [
@@ -103,6 +113,9 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Dynamically import vite utilities to avoid bundling in production
+  const { setupVite, serveStatic } = await import("./vite.js");
+  
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
