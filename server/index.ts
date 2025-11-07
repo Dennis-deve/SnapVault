@@ -113,9 +113,6 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // Dynamically import vite utilities to avoid bundling in production
-  const { setupVite, serveStatic } = await import("./vite.js");
-  
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
@@ -130,9 +127,19 @@ app.use((req, res, next) => {
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
   if (app.get("env") === "development") {
+    // Dynamically import vite utilities only in development
+    const { setupVite } = await import("./vite.js");
     await setupVite(app, server);
   } else {
-    serveStatic(app);
+    // In production, serve static files from dist/public
+    const path = await import("path");
+    const distPath = path.resolve(import.meta.dirname, "public");
+    app.use(express.static(distPath));
+    
+    // Catch-all route for SPA
+    app.get("*", (_req, res) => {
+      res.sendFile(path.resolve(distPath, "index.html"));
+    });
   }
 
   // ALWAYS serve the app on the port specified in the environment variable PORT
