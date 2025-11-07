@@ -84,15 +84,20 @@ export default function Dashboard() {
         const totalFiles = fileArray.length;
         let uploadedFiles = 0;
 
-        // Process files in parallel batches of 3 for faster uploads
-        const batchSize = 3;
+        // Sequential uploads on mobile for better reliability
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        const batchSize = isMobile ? 1 : 3;
+        
         for (let i = 0; i < fileArray.length; i += batchSize) {
           const batch = fileArray.slice(i, i + batchSize);
           
           await Promise.all(
             batch.map(async (file) => {
-              // Use upload helper with JWT authentication for mobile
-              await uploadFile(file, albumId);
+              // Use upload helper with JWT authentication and progress tracking
+              await uploadFile(file, albumId, (percent) => {
+                const overallProgress = Math.round(((uploadedFiles + (percent / 100)) / totalFiles) * 100);
+                setUploadProgress(overallProgress);
+              });
 
               uploadedFiles++;
               setUploadProgress(Math.round((uploadedFiles / totalFiles) * 100));
@@ -100,7 +105,7 @@ export default function Dashboard() {
               // Show individual file completion
               if (totalFiles > 1) {
                 toast({
-                  title: `${uploadedFiles}/${totalFiles} uploaded`,
+                  title: `📤 ${uploadedFiles}/${totalFiles} uploaded`,
                   description: file.name,
                   duration: 2000,
                 });
@@ -111,7 +116,7 @@ export default function Dashboard() {
 
         queryClient.invalidateQueries({ queryKey: ["/api/albums"] });
         toast({
-          title: "Upload complete!",
+          title: "✅ Upload complete!",
           description: `${totalFiles} file(s) uploaded successfully.`,
         });
         setIsUploading(false);

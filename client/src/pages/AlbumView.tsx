@@ -110,22 +110,26 @@ export default function AlbumView() {
       const totalFiles = fileArray.length;
       let completed = 0;
 
-      // Upload files in parallel batches of 3 for faster processing with Cloudinary
-      const batchSize = 3;
+      // Upload files sequentially on mobile for better reliability (parallel can overwhelm mobile networks)
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      const batchSize = isMobile ? 1 : 3;
+      
       for (let i = 0; i < fileArray.length; i += batchSize) {
         const batch = fileArray.slice(i, i + batchSize);
         
         await Promise.all(
           batch.map(async (file) => {
-            // Use upload helper with JWT authentication for mobile
-            await uploadFile(file, albumId);
+            // Use upload helper with JWT authentication and progress tracking
+            await uploadFile(file, albumId, (percent) => {
+              console.log(`${file.name}: ${percent}%`);
+            });
 
             completed++;
             
             // Show progress for multiple files
             if (totalFiles > 1) {
               toast({
-                title: `${completed}/${totalFiles} uploaded`,
+                title: `📤 ${completed}/${totalFiles} uploaded`,
                 description: file.name,
                 duration: 2000,
               });
@@ -136,7 +140,7 @@ export default function AlbumView() {
 
       queryClient.invalidateQueries({ queryKey: ["/api/albums", albumId, "media"] });
       toast({
-        title: "Upload complete!",
+        title: "✅ Upload complete!",
         description: `${totalFiles} file(s) uploaded successfully.`,
       });
       setIsUploading(false);

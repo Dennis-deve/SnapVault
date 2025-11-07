@@ -39,13 +39,26 @@ function setupHealthCheck(app: Express) {
 // Helper function to upload buffer to Cloudinary
 async function uploadToCloudinary(buffer: Buffer, filename: string, resourceType: 'image' | 'video'): Promise<string> {
   return new Promise((resolve, reject) => {
+    const uploadOptions: any = {
+      resource_type: resourceType,
+      folder: 'cloudmediavault',
+      public_id: filename.split('.')[0],
+      use_filename: true,
+    };
+
+    // Optimize for mobile: compress images and videos
+    if (resourceType === 'image') {
+      uploadOptions.quality = 'auto:good'; // Automatic quality optimization
+      uploadOptions.fetch_format = 'auto'; // Auto format (WebP for supported browsers)
+    } else if (resourceType === 'video') {
+      uploadOptions.quality = 'auto'; // Automatic quality
+      uploadOptions.eager = [
+        { width: 640, height: 480, crop: 'limit', format: 'mp4' } // Mobile-optimized version
+      ];
+    }
+
     const uploadStream = cloudinary.uploader.upload_stream(
-      {
-        resource_type: resourceType,
-        folder: 'cloudmediavault',
-        public_id: filename.split('.')[0],
-        use_filename: true,
-      },
+      uploadOptions,
       (error, result) => {
         if (error) reject(error);
         else resolve(result!.secure_url);
