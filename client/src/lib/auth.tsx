@@ -19,6 +19,37 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Token management functions
+function getToken(): string | null {
+  return localStorage.getItem("auth_token");
+}
+
+function setToken(token: string) {
+  localStorage.setItem("auth_token", token);
+}
+
+function removeToken() {
+  localStorage.removeItem("auth_token");
+}
+
+// Helper to make authenticated requests with JWT
+export async function fetchWithAuth(url: string, options: RequestInit = {}) {
+  const token = getToken();
+  const headers: HeadersInit = {
+    ...options.headers,
+  };
+  
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  
+  return fetch(url, {
+    ...options,
+    headers,
+    credentials: "include", // Still include for backward compatibility
+  });
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -30,16 +61,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function checkAuth() {
     try {
-      const response = await fetch(getApiUrl("/api/auth/me"), {
-        credentials: "include",
-      });
+      const response = await fetchWithAuth(getApiUrl("/api/auth/me"));
       
       if (response.ok) {
         const userData = await response.json();
         setUser(userData);
+      } else {
+        // Token might be invalid, clear it
+        removeToken();
       }
     } catch (error) {
       // Not logged in
+      removeToken();
     } finally {
       setIsLoading(false);
     }
@@ -50,6 +83,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       method: "POST",
       body: JSON.stringify({ email, password }),
     });
+    
+    // Store JWT token from response
+    if (data.token) {
+      setToken(data.token);
+    }
+    
     setUser(data);
   }
 
@@ -58,6 +97,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       method: "POST",
       body: JSON.stringify({ email, password, pin: pin || null }),
     });
+    
+    // Store JWT token from response
+    if (data.token) {
+      setToken(data.token);
+    }
+    
     setUser(data);
   }
 
@@ -65,6 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await apiRequest("/api/auth/logout", {
       method: "POST",
     });
+    removeToken();
     setUser(null);
   }
 

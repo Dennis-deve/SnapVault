@@ -8,6 +8,7 @@ import { z } from "zod";
 import multer from "multer";
 import cloudinary from "./cloudinary";
 import { Readable } from "stream";
+import { generateToken, authenticateFlexible } from "./jwt";
 
 // Configure Multer for memory storage
 const upload = multer({
@@ -17,12 +18,10 @@ const upload = multer({
   },
 });
 
-// Middleware to check if user is authenticated
+// Middleware to check if user is authenticated (supports both session and JWT)
 function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated()) {
-    return next();
-  }
-  return res.status(401).json({ message: "Unauthorized" });
+  // Use flexible authentication (session OR JWT)
+  return authenticateFlexible(req, res, next);
 }
 
 // Health check endpoint for Render
@@ -83,13 +82,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         pin: userData.pin || null, // Store PIN as-is (plain text)
       });
 
-      // Log in the user
+      // Generate JWT token for mobile compatibility
+      const token = generateToken(user.id);
+
+      // Log in the user (for session-based auth)
       req.login(user, (err: any) => {
         if (err) return next(err);
         return res.json({
           id: user.id,
           email: user.email,
           pin: user.pin,
+          token, // Include JWT token for mobile devices
         });
       });
     } catch (error: unknown) {
@@ -107,12 +110,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: info?.message || "Invalid credentials" });
       }
 
+      // Generate JWT token for mobile compatibility
+      const token = generateToken(user.id);
+
       req.login(user, (loginErr: any) => {
         if (loginErr) return next(loginErr);
         return res.json({
           id: user.id,
           email: user.email,
           pin: user.pin,
+          token, // Include JWT token for mobile devices
         });
       });
     })(req, res, next);

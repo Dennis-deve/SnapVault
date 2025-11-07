@@ -1,6 +1,11 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { getApiUrl } from "./api";
 
+// Get JWT token from localStorage
+function getToken(): string | null {
+  return localStorage.getItem("auth_token");
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
@@ -13,12 +18,20 @@ export async function apiRequest(
   options?: RequestInit,
 ): Promise<any> {
   const fullUrl = getApiUrl(url);
+  const token = getToken();
+  
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options?.headers as Record<string, string> || {}),
+  };
+  
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  
   const res = await fetch(fullUrl, {
     ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options?.headers,
-    },
+    headers,
     credentials: "include",
   });
 
@@ -33,7 +46,15 @@ export const getQueryFn: <T>(options: {
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
     const fullUrl = getApiUrl(queryKey.join("/") as string);
+    const token = getToken();
+    
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+    
     const res = await fetch(fullUrl, {
+      headers,
       credentials: "include",
     });
 
