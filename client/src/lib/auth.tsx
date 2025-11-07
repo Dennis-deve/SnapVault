@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "./queryClient";
+import { getApiUrl } from "./api";
 
 interface User {
   id: string;
@@ -29,7 +30,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function checkAuth() {
     try {
-      const response = await fetch("/api/auth/me", {
+      const response = await fetch(getApiUrl("/api/auth/me"), {
         credentials: "include",
       });
       
