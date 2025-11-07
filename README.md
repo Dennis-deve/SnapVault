@@ -181,3 +181,43 @@ Required environment variables:
 - Static assets served from `attached_assets/` directory
 - Generated images for branding (logo, hero illustrations)
 - Alias configured in Vite: `@assets` pointing to attached_assets directory
+
+## Deployment
+
+### Render.com (Recommended)
+
+SnapVault is optimized for deployment on Render.com with full-stack Node.js support.
+
+**Quick Deploy:**
+1. See `RENDER_QUICK_START.md` for 5-minute deployment
+2. See `RENDER_DEPLOYMENT.md` for comprehensive guide
+
+**Live URL:** https://snapvault.onrender.com
+
+**Features:**
+- ✅ Free SSL certificate
+- ✅ Auto-deploy from GitHub
+- ✅ Health check endpoint at `/health`
+- ✅ CORS configured for production
+- ✅ PostgreSQL database integration
+- ✅ Cloudinary media storage
+
+### Other Platforms
+
+- **Railway**: See `railway.toml` configuration
+- **Local Development**: `npm run dev`
+
+### Environment Variables
+
+Required for production:
+```bash
+DATABASE_URL=postgresql://user:pass@host/db
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
+SESSION_SECRET=random_32_character_string
+NODE_ENV=production
+PORT=10000
+```
+
+See `.env.example` for complete list.
