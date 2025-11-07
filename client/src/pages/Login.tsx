@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
+import { Footer } from "@/components/Footer";
 import { useLocation } from "wouter";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -53,19 +54,20 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-background to-primary/5 flex items-center justify-center p-4">
-      <Card className="w-full max-w-md p-8 rounded-2xl">
-        <div className="flex items-center justify-center gap-2 mb-8">
-          <img src={logoImage} alt="SnapVault" className="h-10 w-10" />
-          <h1 className="text-2xl font-display font-bold text-primary">SnapVault</h1>
-        </div>
+    <div className="min-h-screen bg-gradient-to-b from-background to-primary/5 flex flex-col">
+      <div className="flex-1 flex items-center justify-center p-4">
+        <Card className="w-full max-w-md p-8 rounded-2xl animate-fade-in-up">
+          <div className="flex items-center justify-center gap-2 mb-8 animate-fade-in animation-delay-200">
+            <img src={logoImage} alt="SnapVault" className="h-10 w-10" />
+            <h1 className="text-2xl font-display font-bold text-primary">SnapVault</h1>
+          </div>
 
-        <h2 className="text-3xl font-display font-semibold text-center mb-2">Welcome back</h2>
-        <p className="text-muted-foreground text-center mb-8">
-          Log in to access your media
-        </p>
+          <h2 className="text-3xl font-display font-semibold text-center mb-2 animate-fade-in animation-delay-400">Welcome back</h2>
+          <p className="text-muted-foreground text-center mb-8 animate-fade-in animation-delay-400">
+            Log in to access your media
+          </p>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-6 animate-fade-in animation-delay-600">
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
             <Input
@@ -141,6 +143,9 @@ export default function Login() {
           </p>
         </div>
       </Card>
+      </div>
+      
+      <Footer className="animate-fade-in animation-delay-800" />
     </div>
   );
 }

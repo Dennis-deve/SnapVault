@@ -5,6 +5,17 @@ import bcrypt from "bcryptjs";
 import { storage } from "./storage";
 import { insertUserSchema, insertAlbumSchema, insertMediaSchema } from "@shared/schema";
 import { z } from "zod";
+import multer from "multer";
+import cloudinary from "./cloudinary";
+import { Readable } from "stream";
+
+// Configure Multer for memory storage
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 100 * 1024 * 1024, // 100MB limit
+  },
+});
 
 // Middleware to check if user is authenticated
 function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -14,9 +25,30 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   return res.status(401).json({ message: "Unauthorized" });
 }
 
+// Helper function to upload buffer to Cloudinary
+async function uploadToCloudinary(buffer: Buffer, filename: string, resourceType: 'image' | 'video'): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        resource_type: resourceType,
+        folder: 'cloudmediavault',
+        public_id: filename.split('.')[0],
+        use_filename: true,
+      },
+      (error, result) => {
+        if (error) reject(error);
+        else resolve(result!.secure_url);
+      }
+    );
+
+    const readableStream = Readable.from(buffer);
+    readableStream.pipe(uploadStream);
+  });
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth routes
-  app.post("/api/auth/signup", async (req, res, next) => {
+  app.post("/api/auth/signup", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const userData = insertUserSchema.parse(req.body);
       
@@ -37,7 +69,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       // Log in the user
-      req.login(user, (err) => {
+      req.login(user, (err: any) => {
         if (err) return next(err);
         return res.json({
           id: user.id,
@@ -45,7 +77,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           pin: user.pin,
         });
       });
-    } catch (error) {
+    } catch (error: unknown) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Invalid input", errors: error.errors });
       }
@@ -53,14 +85,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/auth/login", (req, res, next) => {
+  app.post("/api/auth/login", (req: Request, res: Response, next: NextFunction) => {
     passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) return next(err);
       if (!user) {
         return res.status(401).json({ message: info?.message || "Invalid credentials" });
       }
 
-      req.login(user, (loginErr) => {
+      req.login(user, (loginErr: any) => {
         if (loginErr) return next(loginErr);
         return res.json({
           id: user.id,
@@ -71,8 +103,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     })(req, res, next);
   });
 
-  app.post("/api/auth/logout", (req, res) => {
-    req.logout((err) => {
+  app.post("/api/auth/logout", (req: Request, res: Response) => {
+    req.logout((err: any) => {
       if (err) {
         return res.status(500).json({ message: "Logout failed" });
       }
@@ -80,26 +112,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
-  app.get("/api/auth/me", requireAuth, (req, res) => {
+  app.get("/api/auth/me", requireAuth, (req: Request, res: Response) => {
     res.json({
       id: req.user!.id,
       email: req.user!.email,
-      pin: req.user!.pin,
+      pin: req.user!.pin ? "****" : null, // Indicate PIN is set without exposing it
     });
   });
 
+  app.post("/api/auth/update-pin", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { pin } = req.body;
+      
+      if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
+        return res.status(400).json({ message: "PIN must be exactly 4 digits" });
+      }
+
+      const hashedPin = await bcrypt.hash(pin, 10);
+      await storage.updateUserPin(req.user!.id, hashedPin);
+
+      // Update session user
+      req.user!.pin = hashedPin;
+
+      res.json({ 
+        message: "PIN updated successfully",
+        hasPin: true 
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // Album routes
-  app.get("/api/albums", requireAuth, async (req, res, next) => {
+  app.get("/api/albums", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
     try {
       const albums = await storage.getAlbumsByUserId(req.user!.id);
       
-      // Get media count for each album
+      // Get media count and thumbnail for each album
       const albumsWithCount = await Promise.all(
         albums.map(async (album) => {
           const mediaItems = await storage.getMediaByAlbumId(album.id);
+          // Get first media item as thumbnail (prefer images over videos)
+          const images = mediaItems.filter(m => m.type.startsWith('image/'));
+          const thumbnail = images.length > 0 ? images[0] : mediaItems[0];
+          
           return {
             ...album,
             itemCount: mediaItems.length,
+            thumbnail: thumbnail?.path || null,
           };
         })
       );
@@ -110,12 +170,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/albums", requireAuth, async (req, res, next) => {
+  app.post("/api/albums", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
     try {
       const albumData = insertAlbumSchema.parse(req.body);
       const album = await storage.createAlbum(albumData, req.user!.id);
       res.json(album);
-    } catch (error) {
+    } catch (error: unknown) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Invalid input", errors: error.errors });
       }
@@ -123,7 +183,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/albums/:id", requireAuth, async (req, res, next) => {
+  app.get("/api/albums/:id", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
     try {
       const album = await storage.getAlbum(req.params.id);
       
@@ -141,7 +201,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/albums/:id", requireAuth, async (req, res, next) => {
+  app.delete("/api/albums/:id", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
     try {
       const album = await storage.getAlbum(req.params.id);
       
@@ -164,8 +224,84 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Lock/Unlock album routes
+  app.post("/api/albums/:id/lock", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { pin } = req.body;
+      
+      if (!req.user!.pin) {
+        return res.status(400).json({ message: "Please set up a Magic PIN in Settings first" });
+      }
+      
+      const isPinValid = await bcrypt.compare(pin, req.user!.pin);
+      if (!isPinValid) {
+        return res.status(401).json({ message: "Invalid PIN" });
+      }
+      
+      const album = await storage.getAlbum(req.params.id);
+      
+      if (!album) {
+        return res.status(404).json({ message: "Album not found" });
+      }
+      
+      if (album.userId !== req.user!.id) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      
+      await storage.lockAlbum(req.params.id);
+      res.json({ message: "Album locked successfully" });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/albums/:id/unlock", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { pin } = req.body;
+      
+      if (!req.user!.pin) {
+        return res.status(400).json({ message: "Magic PIN not set" });
+      }
+      
+      const isPinValid = await bcrypt.compare(pin, req.user!.pin);
+      if (!isPinValid) {
+        return res.status(401).json({ message: "Invalid PIN" });
+      }
+      
+      const album = await storage.getAlbum(req.params.id);
+      
+      if (!album) {
+        return res.status(404).json({ message: "Album not found" });
+      }
+      
+      if (album.userId !== req.user!.id) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      
+      await storage.unlockAlbum(req.params.id);
+      res.json({ message: "Album unlocked successfully" });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/auth/verify-pin", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { pin } = req.body;
+      
+      if (!req.user!.pin) {
+        return res.status(400).json({ message: "Magic PIN not set" });
+      }
+      
+      const isPinValid = await bcrypt.compare(pin, req.user!.pin);
+      res.json({ valid: isPinValid });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // Media routes
-  app.get("/api/albums/:albumId/media", requireAuth, async (req, res, next) => {
+  app.get("/api/albums/:albumId/media", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
     try {
       const album = await storage.getAlbum(req.params.albumId);
       
@@ -184,7 +320,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/media", requireAuth, async (req, res, next) => {
+  app.get("/api/media", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
     try {
       const mediaItems = await storage.getMediaByUserId(req.user!.id);
       res.json(mediaItems);
@@ -193,7 +329,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/media/search", requireAuth, async (req, res, next) => {
+  app.get("/api/media/search", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
     try {
       const query = req.query.q as string;
       
@@ -208,7 +344,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/media", requireAuth, async (req, res, next) => {
+  // New Cloudinary upload endpoint
+  app.post("/api/upload", requireAuth, upload.single('file'), async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      const { albumId } = req.body;
+
+      // Verify album belongs to user if albumId is provided
+      if (albumId) {
+        const album = await storage.getAlbum(albumId);
+        if (!album || album.userId !== req.user!.id) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+
+      // Determine resource type
+      const resourceType = req.file.mimetype.startsWith('video/') ? 'video' : 'image';
+
+      // Upload to Cloudinary
+      const cloudinaryUrl = await uploadToCloudinary(
+        req.file.buffer,
+        req.file.originalname,
+        resourceType
+      );
+
+      // Save to database
+      const media = await storage.createMedia(
+        {
+          filename: req.file.originalname,
+          path: cloudinaryUrl,
+          type: req.file.mimetype,
+          size: req.file.size,
+          albumId: albumId || null,
+        },
+        req.user!.id
+      );
+
+      res.json(media);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Legacy base64 upload endpoint (keep for backward compatibility)
+  app.post("/api/media", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
     try {
       const mediaData = insertMediaSchema.parse(req.body);
       
@@ -222,7 +404,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const media = await storage.createMedia(mediaData, req.user!.id);
       res.json(media);
-    } catch (error) {
+    } catch (error: unknown) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Invalid input", errors: error.errors });
       }
@@ -230,7 +412,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/media/:id", requireAuth, async (req, res, next) => {
+  app.delete("/api/media/:id", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
     try {
       const media = await storage.getMedia(req.params.id);
       
@@ -240,6 +422,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (media.userId !== req.user!.id) {
         return res.status(403).json({ message: "Forbidden" });
+      }
+
+      // Delete from Cloudinary if it's a Cloudinary URL
+      if (media.path.includes('cloudinary.com')) {
+        try {
+          // Extract public_id from URL
+          const urlParts = media.path.split('/');
+          const filename = urlParts[urlParts.length - 1];
+          const publicId = `cloudmediavault/${filename.split('.')[0]}`;
+          const resourceType = media.type.startsWith('video/') ? 'video' : 'image';
+          
+          await cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
+        } catch (cloudinaryError) {
+          console.error('Failed to delete from Cloudinary:', cloudinaryError);
+          // Continue with database deletion even if Cloudinary deletion fails
+        }
       }
       
       await storage.deleteMedia(req.params.id);

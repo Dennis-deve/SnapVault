@@ -15,12 +15,15 @@ export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUserPin(userId: string, hashedPin: string): Promise<void>;
 
   // Album methods
   getAlbum(id: string): Promise<Album | undefined>;
   getAlbumsByUserId(userId: string): Promise<Album[]>;
   createAlbum(album: InsertAlbum, userId: string): Promise<Album>;
   deleteAlbum(id: string): Promise<void>;
+  lockAlbum(id: string): Promise<void>;
+  unlockAlbum(id: string): Promise<void>;
 
   // Media methods
   getMedia(id: string): Promise<Media | undefined>;
@@ -48,6 +51,10 @@ export class DBStorage implements IStorage {
     return user;
   }
 
+  async updateUserPin(userId: string, hashedPin: string): Promise<void> {
+    await db.update(users).set({ pin: hashedPin }).where(eq(users.id, userId));
+  }
+
   // Album methods
   async getAlbum(id: string): Promise<Album | undefined> {
     const [album] = await db.select().from(albums).where(eq(albums.id, id));
@@ -68,6 +75,14 @@ export class DBStorage implements IStorage {
 
   async deleteAlbum(id: string): Promise<void> {
     await db.delete(albums).where(eq(albums.id, id));
+  }
+
+  async lockAlbum(id: string): Promise<void> {
+    await db.update(albums).set({ isLocked: 1 }).where(eq(albums.id, id));
+  }
+
+  async unlockAlbum(id: string): Promise<void> {
+    await db.update(albums).set({ isLocked: 0 }).where(eq(albums.id, id));
   }
 
   // Media methods

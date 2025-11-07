@@ -7,7 +7,7 @@ export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   email: text("email").notNull().unique(),
   password: text("password").notNull(),
-  pin: text("pin"),
+  pin: text("pin"), // Magic PIN for locking albums
 });
 
 export const albums = pgTable("albums", {
@@ -15,6 +15,7 @@ export const albums = pgTable("albums", {
   name: text("name").notNull(),
   description: text("description"),
   userId: varchar("user_id").notNull(),
+  isLocked: integer("is_locked").default(0).notNull(), // 0 = unlocked, 1 = locked
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

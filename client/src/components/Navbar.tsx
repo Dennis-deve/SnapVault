@@ -1,4 +1,4 @@
-import { Menu } from "lucide-react";
+import { Menu, Home, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -20,9 +20,11 @@ interface NavbarProps {
   };
   onSettingsClick?: () => void;
   onLogout?: () => void;
+  onHomeClick?: () => void;
+  onSearchClick?: () => void;
 }
 
-export function Navbar({ onMenuClick, showMenu, user, onSettingsClick, onLogout }: NavbarProps) {
+export function Navbar({ onMenuClick, showMenu, user, onSettingsClick, onLogout, onHomeClick, onSearchClick }: NavbarProps) {
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="flex h-16 items-center justify-between px-4 gap-4">
@@ -37,13 +39,35 @@ export function Navbar({ onMenuClick, showMenu, user, onSettingsClick, onLogout 
               <Menu className="h-5 w-5" />
             </Button>
           )}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 cursor-pointer" onClick={onHomeClick}>
             <img src={logoImage} alt="SnapVault" className="h-8 w-8" />
             <h1 className="text-xl font-display font-bold text-primary">SnapVault</h1>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
+          {onHomeClick && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onHomeClick}
+              data-testid="button-home"
+              title="Home"
+            >
+              <Home className="h-5 w-5" />
+            </Button>
+          )}
+          {onSearchClick && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onSearchClick}
+              data-testid="button-search"
+              title="Search"
+            >
+              <Search className="h-5 w-5" />
+            </Button>
+          )}
           <ThemeToggle />
           {user && (
             <DropdownMenu>

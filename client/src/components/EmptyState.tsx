@@ -1,8 +1,8 @@
-import { Cloud, FolderOpen, Search } from "lucide-react";
+import { Cloud, FolderOpen, Search, Video, Image } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface EmptyStateProps {
-  icon?: "cloud" | "folder" | "search";
+  icon?: "cloud" | "folder" | "search" | "video" | "image";
   title: string;
   description: string;
   actionLabel?: string;
@@ -16,7 +16,12 @@ export function EmptyState({
   actionLabel,
   onAction,
 }: EmptyStateProps) {
-  const Icon = icon === "cloud" ? Cloud : icon === "search" ? Search : FolderOpen;
+  const Icon = 
+    icon === "cloud" ? Cloud : 
+    icon === "search" ? Search : 
+    icon === "video" ? Video :
+    icon === "image" ? Image :
+    FolderOpen;
 
   return (
     <div className="flex flex-col items-center justify-center py-16 px-4">

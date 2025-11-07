@@ -2,7 +2,7 @@
 
 ## Overview
 
-SnapVault is a modern, mobile-first web application designed to help users free up iPhone storage by backing up photos and videos to the cloud. The application provides a clean, iOS-inspired interface for uploading, organizing, viewing, and managing media files through albums. Built with a focus on simplicity and user experience, SnapVault follows Apple's Human Interface Guidelines aesthetic with cloud-inspired visual elements.
+SnapVault is a modern, mobile-first web application designed to help users free up Phone storage by backing up photos and videos to the cloud. The application provides a clean, iOS-inspired interface for uploading, organizing, viewing, and managing media files through albums. Built with a focus on simplicity and user experience, SnapVault follows Apple's Human Interface Guidelines aesthetic with cloud-inspired visual elements.
 
 ## User Preferences
 

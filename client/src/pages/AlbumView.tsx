@@ -1,10 +1,13 @@
 import { Navbar } from "@/components/Navbar";
+import { AppSidebar } from "@/components/AppSidebar";
 import { MediaGrid } from "@/components/MediaGrid";
 import { MediaViewer } from "@/components/MediaViewer";
 import { EmptyState } from "@/components/EmptyState";
 import { FloatingActionButton } from "@/components/FloatingActionButton";
+import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, MoreVertical, Upload } from "lucide-react";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { ArrowLeft, MoreVertical, Upload, Lock } from "lucide-react";
 import { useState } from "react";
 import { useLocation, useRoute } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -26,17 +29,20 @@ export default function AlbumView() {
 
   const [viewerOpen, setViewerOpen] = useState(false);
   const [selectedMedia, setSelectedMedia] = useState<any>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const fileInputRef = useState<HTMLInputElement | null>(null)[0];
 
   const albumId = params?.id;
 
   // Fetch album details
-  const { data: album } = useQuery({
+  const { data: album } = useQuery<any>({
     queryKey: ["/api/albums", albumId],
     enabled: !!albumId,
   });
 
-  // Fetch media for this album
-  const { data: mediaItems = [], isLoading: isLoadingMedia } = useQuery({
+  // Fetch media for this album (even if locked, user authenticated with PIN)
+  const { data: mediaItems = [], isLoading: isLoadingMedia } = useQuery<any[]>({
     queryKey: ["/api/albums", albumId, "media"],
     enabled: !!albumId,
   });
@@ -53,26 +59,134 @@ export default function AlbumView() {
     },
   });
 
+  // Delete media mutation
+  const deleteMediaMutation = useMutation({
+    mutationFn: async (mediaId: string) => {
+      return apiRequest(`/api/media/${mediaId}`, {
+        method: "DELETE",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/albums", albumId, "media"] });
+      setViewerOpen(false);
+      toast({
+        title: "Media deleted",
+        description: "The media has been deleted successfully.",
+      });
+    },
+  });
+
   const handleMediaClick = (item: any) => {
     setSelectedMedia(item);
     setViewerOpen(true);
   };
 
   const handleDownload = () => {
-    toast({
-      title: "Download started",
-      description: `Downloading ${selectedMedia?.filename}`,
-    });
+    if (selectedMedia) {
+      // Create a temporary link to download the file
+      const link = document.createElement('a');
+      link.href = selectedMedia.path;
+      link.download = selectedMedia.filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      toast({
+        title: "Download started",
+        description: `Downloading ${selectedMedia.filename}`,
+      });
+    }
   };
 
-  const handleUpload = () => {
-    toast({
-      title: "Upload feature",
-      description: "File upload will be implemented in the full version",
-    });
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    setIsUploading(true);
+
+    try {
+      const fileArray = Array.from(files);
+      const totalFiles = fileArray.length;
+      let completed = 0;
+
+      // Upload files in parallel batches of 3 for faster processing with Cloudinary
+      const batchSize = 3;
+      for (let i = 0; i < fileArray.length; i += batchSize) {
+        const batch = fileArray.slice(i, i + batchSize);
+        
+        await Promise.all(
+          batch.map(async (file) => {
+            // Use FormData for Cloudinary upload (much faster than base64!)
+            const formData = new FormData();
+            formData.append('file', file);
+            if (albumId) {
+              formData.append('albumId', albumId);
+            }
+
+            const response = await fetch('/api/upload', {
+              method: 'POST',
+              body: formData,
+              credentials: 'include', // Include session cookie
+            });
+
+            if (!response.ok) {
+              throw new Error(`Upload failed: ${response.statusText}`);
+            }
+
+            completed++;
+            
+            // Show progress for multiple files
+            if (totalFiles > 1) {
+              toast({
+                title: `${completed}/${totalFiles} uploaded`,
+                description: file.name,
+                duration: 2000,
+              });
+            }
+          })
+        );
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["/api/albums", albumId, "media"] });
+      toast({
+        title: "Upload complete!",
+        description: `${totalFiles} file(s) uploaded successfully.`,
+      });
+      setIsUploading(false);
+    } catch (error: any) {
+      toast({
+        title: "Upload failed",
+        description: error.message || "Failed to upload files",
+        variant: "destructive",
+      });
+      setIsUploading(false);
+    }
   };
 
-  const handleDelete = async () => {
+  const handleUploadClick = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = true;
+    input.accept = 'image/*,video/*';
+    input.onchange = handleFileSelect as any;
+    input.click();
+  };
+
+  const handleDeleteMedia = async () => {
+    if (!selectedMedia) return;
+
+    try {
+      await deleteMediaMutation.mutateAsync(selectedMedia.id);
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete media",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteAlbum = async () => {
     try {
       await deleteAlbumMutation.mutateAsync();
       toast({
@@ -93,9 +207,12 @@ export default function AlbumView() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar
-        showMenu={false}
+        showMenu={true}
         user={user ? { email: user.email } : undefined}
         onSettingsClick={() => setLocation("/settings")}
+        onSearchClick={() => setLocation("/search")}
+        onHomeClick={() => setLocation("/dashboard")}
+        onMenuClick={() => setSidebarOpen(true)}
         onLogout={async () => {
           try {
             await logout();
@@ -114,7 +231,30 @@ export default function AlbumView() {
         }}
       />
 
-      <div className="sticky top-16 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      {/* Mobile Sidebar */}
+      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+        <SheetContent side="left" className="p-0 w-64">
+          <AppSidebar 
+            onNavigate={(path) => {
+              setLocation(path);
+              setSidebarOpen(false);
+            }}
+            currentPath={`/album/${albumId}`}
+          />
+        </SheetContent>
+      </Sheet>
+
+      <div className="flex">
+        {/* Desktop Sidebar */}
+        <div className="hidden lg:block">
+          <AppSidebar 
+            onNavigate={setLocation}
+            currentPath={`/album/${albumId}`}
+          />
+        </div>
+
+        <div className="flex-1">
+          <div className="sticky top-16 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container max-w-7xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <Button
@@ -134,12 +274,13 @@ export default function AlbumView() {
             <Button
               variant="outline"
               size="sm"
-              onClick={handleUpload}
+              onClick={handleUploadClick}
+              disabled={isUploading}
               className="rounded-2xl hidden md:flex"
               data-testid="button-upload-media"
             >
               <Upload className="h-4 w-4 mr-2" />
-              Upload
+              {isUploading ? "Uploading..." : "Upload"}
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -151,7 +292,7 @@ export default function AlbumView() {
                 <DropdownMenuItem data-testid="button-edit-album">Edit Album</DropdownMenuItem>
                 <DropdownMenuItem
                   className="text-destructive"
-                  onClick={handleDelete}
+                  onClick={handleDeleteAlbum}
                   data-testid="button-delete-album"
                 >
                   Delete Album
@@ -173,25 +314,30 @@ export default function AlbumView() {
             title="No media yet"
             description="Upload your first photos or videos to this album."
             actionLabel="Upload Media"
-            onAction={handleUpload}
+            onAction={handleUploadClick}
           />
         ) : (
           <MediaGrid items={mediaItems} onItemClick={handleMediaClick} />
         )}
       </main>
 
-      <FloatingActionButton onClick={handleUpload} label="Upload Media" />
+          <FloatingActionButton onClick={handleUploadClick} label="Upload Media" />
 
-      {selectedMedia && (
-        <MediaViewer
-          open={viewerOpen}
-          onOpenChange={setViewerOpen}
-          filename={selectedMedia.filename}
-          type={selectedMedia.type}
-          path={selectedMedia.path || ""}
-          onDownload={handleDownload}
-        />
-      )}
+          {selectedMedia && (
+            <MediaViewer
+              open={viewerOpen}
+              onOpenChange={setViewerOpen}
+              filename={selectedMedia.filename}
+              type={selectedMedia.type}
+              path={selectedMedia.path || ""}
+              onDownload={handleDownload}
+              onDelete={handleDeleteMedia}
+            />
+          )}
+        </div>
+      </div>
+      
+      <Footer className="mt-8" />
     </div>
   );
 }

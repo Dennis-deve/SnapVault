@@ -1,4 +1,5 @@
 import { Navbar } from "@/components/Navbar";
+import { Footer } from "@/components/Footer";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +12,7 @@ import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/components/ThemeProvider";
 import { useAuth } from "@/lib/auth";
+import { apiRequest } from "@/lib/queryClient";
 
 export default function Settings() {
   const [, setLocation] = useLocation();
@@ -21,13 +23,51 @@ export default function Settings() {
   const [email, setEmail] = useState("");
   const [pin, setPin] = useState("");
   const [publicSharing, setPublicSharing] = useState(false);
+  const [hasPin, setHasPin] = useState(false);
+  const [isSavingPin, setIsSavingPin] = useState(false);
 
   useEffect(() => {
     if (user) {
       setEmail(user.email);
-      setPin(user.pin || "");
+      setHasPin(!!user.pin && user.pin !== "****");
+      setPin(""); // Don't show hashed PIN
     }
   }, [user]);
+
+  const handleSavePin = async () => {
+    if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
+      toast({
+        title: "Invalid PIN",
+        description: "PIN must be exactly 4 digits (0-9).",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSavingPin(true);
+    try {
+      await apiRequest("/api/auth/update-pin", {
+        method: "POST",
+        body: JSON.stringify({ pin }),
+      });
+
+      setHasPin(true);
+      setPin(""); // Clear input after saving
+
+      toast({
+        title: "PIN Updated",
+        description: "Your Magic PIN has been set successfully.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update PIN",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingPin(false);
+    }
+  };
 
   const handleSave = () => {
     toast({
@@ -110,20 +150,37 @@ export default function Settings() {
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="settings-pin">4-Digit PIN</Label>
+                {hasPin && (
+                  <p className="text-sm text-green-600 dark:text-green-400 mb-2">
+                    ✓ Magic PIN is set
+                  </p>
+                )}
                 <Input
                   id="settings-pin"
-                  type="text"
-                  placeholder="1234"
+                  type="password"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  placeholder={hasPin ? "Enter new PIN to change" : "Enter 4-digit PIN"}
                   value={pin}
-                  onChange={(e) => setPin(e.target.value)}
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/\D/g, "").slice(0, 4);
+                    setPin(value);
+                  }}
                   maxLength={4}
-                  className="rounded-2xl"
+                  className="rounded-2xl text-center text-2xl tracking-widest"
                   data-testid="input-settings-pin"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Quick login with just a 4-digit PIN
+                  Used to lock and unlock albums. Keep it secret!
                 </p>
               </div>
+              <Button 
+                onClick={handleSavePin} 
+                disabled={pin.length !== 4 || isSavingPin}
+                className="rounded-2xl"
+              >
+                {isSavingPin ? "Saving..." : hasPin ? "Update PIN" : "Set PIN"}
+              </Button>
             </div>
           </Card>
 
@@ -185,6 +242,8 @@ export default function Settings() {
           </div>
         </div>
       </main>
+      
+      <Footer className="mt-8" />
     </div>
   );
 }

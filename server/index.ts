@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import passport from "passport";
@@ -13,12 +14,17 @@ declare module 'http' {
   }
 }
 
+// Increase body size limit to 500MB for large video uploads
 app.use(express.json({
+  limit: '500mb',
   verify: (req, _res, buf) => {
     req.rawBody = buf;
   }
 }));
-app.use(express.urlencoded({ extended: false }));
+app.use(express.urlencoded({ 
+  extended: false,
+  limit: '500mb'
+}));
 
 app.use(
   session({
@@ -93,11 +99,14 @@ app.use((req, res, next) => {
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
   const port = parseInt(process.env.PORT || '5000', 10);
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  }, () => {
-    log(`serving on port ${port}`);
-  });
+  
+  // Only listen if not in serverless environment (Vercel)
+  if (process.env.VERCEL !== '1') {
+    server.listen(port, () => {
+      log(`serving on port ${port}`);
+    });
+  }
 })();
+
+// Export for Vercel serverless
+export default app;
