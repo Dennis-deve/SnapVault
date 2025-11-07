@@ -31,13 +31,23 @@ export default function Signup() {
       return;
     }
     
+    // Validate PIN if provided
+    if (pin && (pin.length !== 4 || !/^\d+$/.test(pin))) {
+      toast({
+        title: "Error",
+        description: "PIN must be exactly 4 digits",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     setIsLoading(true);
     
     try {
       await signup(email, password, pin || undefined);
       toast({
         title: "Account created!",
-        description: "Welcome to SnapVault",
+        description: pin ? "Welcome to SnapVault! Your Magic PIN is set." : "Welcome to SnapVault",
       });
       setLocation("/dashboard");
     } catch (error: any) {
@@ -112,16 +122,17 @@ export default function Signup() {
             <Label htmlFor="pin">Magic PIN (Optional)</Label>
             <Input
               id="pin"
-              type="text"
+              type="number"
+              inputMode="numeric"
               placeholder="1234"
               value={pin}
-              onChange={(e) => setPin(e.target.value)}
+              onChange={(e) => setPin(e.target.value.slice(0, 4))}
               className="rounded-2xl"
               data-testid="input-pin"
               maxLength={4}
             />
             <p className="text-xs text-muted-foreground">
-              Quick login with just a 4-digit PIN
+              Set a secure 4-digit PIN to lock/unlock albums. Can be updated in Settings.
             </p>
           </div>
 

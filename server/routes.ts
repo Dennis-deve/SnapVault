@@ -146,26 +146,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { pin } = req.body;
       
-      if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
+      if (!pin || pin.length !== 4 || !/^\d+$/.test(pin)) {
         return res.status(400).json({ message: "PIN must be exactly 4 digits" });
       }
-
+      
+      // Hash PIN for security (used to lock/unlock albums)
       const hashedPin = await bcrypt.hash(pin, 10);
       await storage.updateUserPin(req.user!.id, hashedPin);
-
-      // Update session user
+      
+      // Update the session user
       req.user!.pin = hashedPin;
-
-      res.json({ 
-        message: "PIN updated successfully",
-        hasPin: true 
-      });
+      
+      res.json({ message: "PIN updated successfully" });
     } catch (error) {
       next(error);
     }
-  });
-
-  // Album routes
+  });  // Album routes
   app.get("/api/albums", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
     try {
       const albums = await storage.getAlbumsByUserId(req.user!.id);
@@ -255,6 +251,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Please set up a Magic PIN in Settings first" });
       }
       
+      // Verify PIN with bcrypt
       const isPinValid = await bcrypt.compare(pin, req.user!.pin);
       if (!isPinValid) {
         return res.status(401).json({ message: "Invalid PIN" });
@@ -285,6 +282,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Magic PIN not set" });
       }
       
+      // Verify PIN with bcrypt
       const isPinValid = await bcrypt.compare(pin, req.user!.pin);
       if (!isPinValid) {
         return res.status(401).json({ message: "Invalid PIN" });
@@ -315,6 +313,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Magic PIN not set" });
       }
       
+      // Verify PIN with bcrypt
       const isPinValid = await bcrypt.compare(pin, req.user!.pin);
       res.json({ valid: isPinValid });
     } catch (error) {
