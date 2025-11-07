@@ -25,6 +25,18 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   return res.status(401).json({ message: "Unauthorized" });
 }
 
+// Health check endpoint for Render
+function setupHealthCheck(app: Express) {
+  app.get("/health", (_req, res) => {
+    res.status(200).json({ 
+      status: "ok",
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      environment: process.env.NODE_ENV || "development"
+    });
+  });
+}
+
 // Helper function to upload buffer to Cloudinary
 async function uploadToCloudinary(buffer: Buffer, filename: string, resourceType: 'image' | 'video'): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -47,6 +59,9 @@ async function uploadToCloudinary(buffer: Buffer, filename: string, resourceType
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Setup health check endpoint
+  setupHealthCheck(app);
+  
   // Auth routes
   app.post("/api/auth/signup", async (req: Request, res: Response, next: NextFunction) => {
     try {

@@ -1,12 +1,14 @@
 services:
+  # Combined Backend + Frontend Service (Full-Stack)
+  # This deploys both the Express API and React frontend together
   - type: web
     name: snapvault
-    env: node
+    runtime: node
     region: oregon
     plan: free
     buildCommand: npm install && npm run build
-    startCommand: npm run preview
-    healthCheckPath: /
+    startCommand: npm run start
+    healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
         sync: false
@@ -20,3 +22,7 @@ services:
         generateValue: true
       - key: NODE_ENV
         value: production
+      - key: PORT
+        value: 10000
+
+
