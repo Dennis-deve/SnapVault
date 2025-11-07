@@ -1,12 +1,12 @@
 services:
-  # Combined Backend + Frontend Service (Full-Stack)
-  # This deploys both the Express API and React frontend together
+  # Backend API Service (Node.js + Express)
+  # Deploy this first to get the API URL
   - type: web
-    name: snapvault
+    name: snapvault-api
     runtime: node
     region: oregon
     plan: free
-    buildCommand: npm install && npm run build
+    buildCommand: npm install && npm run build:server
     startCommand: npm run start
     healthCheckPath: /health
     envVars:
@@ -24,5 +24,17 @@ services:
         value: production
       - key: PORT
         value: 10000
+      - key: FRONTEND_URL
+        value: https://snapvault.onrender.com
+
+# Frontend Static Site - Deploy via Render Dashboard
+# Instructions:
+# 1. Create new "Static Site" in Render Dashboard
+# 2. Name: snapvault
+# 3. Build Command: npm install && npm run build:client
+# 4. Publish Directory: dist/public
+# 5. Add Environment Variable:
+#    VITE_API_URL=https://snapvault-api.onrender.com
+# 6. Enable Auto-Deploy from GitHub
 
 

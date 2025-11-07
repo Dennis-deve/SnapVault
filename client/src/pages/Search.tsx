@@ -12,6 +12,7 @@ import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getApiUrl } from "@/lib/api";
 import type { Media } from "@shared/schema";
 
 export default function Search() {
@@ -40,7 +41,7 @@ export default function Search() {
     queryKey: ["/api/media/search", debouncedQuery],
     queryFn: async () => {
       if (!debouncedQuery.trim()) return [];
-      const res = await fetch(`/api/media/search?q=${encodeURIComponent(debouncedQuery)}`);
+      const res = await fetch(getApiUrl(`/api/media/search?q=${encodeURIComponent(debouncedQuery)}`));
       if (!res.ok) throw new Error("Failed to search media");
       return res.json();
     },
@@ -80,8 +81,9 @@ export default function Search() {
   // Delete media mutation
   const deleteMediaMutation = useMutation({
     mutationFn: async (mediaId: string) => {
-      const res = await fetch(`/api/media/${mediaId}`, {
+      const res = await fetch(getApiUrl(`/api/media/${mediaId}`), {
         method: "DELETE",
+        credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to delete media");
     },

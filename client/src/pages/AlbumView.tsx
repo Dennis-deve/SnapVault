@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { getApiUrl } from "@/lib/api";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -123,7 +124,7 @@ export default function AlbumView() {
               formData.append('albumId', albumId);
             }
 
-            const response = await fetch('/api/upload', {
+            const response = await fetch(getApiUrl('/api/upload'), {
               method: 'POST',
               body: formData,
               credentials: 'include', // Include session cookie

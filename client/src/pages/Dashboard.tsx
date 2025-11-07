@@ -18,6 +18,7 @@ import { useState, useRef } from "react";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
+import { getApiUrl } from "@/lib/api";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 
@@ -95,7 +96,7 @@ export default function Dashboard() {
               formData.append('file', file);
               formData.append('albumId', albumId);
 
-              const response = await fetch('/api/upload', {
+              const response = await fetch(getApiUrl('/api/upload'), {
                 method: 'POST',
                 body: formData,
                 credentials: 'include', // Include session cookie
