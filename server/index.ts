@@ -69,6 +69,7 @@ app.use(
     secret: process.env.SESSION_SECRET || "snapvault-secret-change-in-production",
     resave: false,
     saveUninitialized: false,
+    proxy: process.env.NODE_ENV === "production", // Trust Render's proxy
     cookie: {
       maxAge: 1000 * 60 * 60 * 24 * 7, // 1 week
       httpOnly: true,
