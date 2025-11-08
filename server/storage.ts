@@ -16,6 +16,7 @@ export interface IStorage {
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUserPin(userId: string, hashedPin: string): Promise<void>;
+  deleteUser(userId: string): Promise<void>;
 
   // Album methods
   getAlbum(id: string): Promise<Album | undefined>;
@@ -53,6 +54,10 @@ export class DBStorage implements IStorage {
 
   async updateUserPin(userId: string, hashedPin: string): Promise<void> {
     await db.update(users).set({ pin: hashedPin }).where(eq(users.id, userId));
+  }
+
+  async deleteUser(userId: string): Promise<void> {
+    await db.delete(users).where(eq(users.id, userId));
   }
 
   // Album methods

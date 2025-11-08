@@ -2,6 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import passport from "passport";
 import bcrypt from "bcryptjs";
+import rateLimit from "express-rate-limit";
 import { storage } from "./storage";
 import { insertUserSchema, insertAlbumSchema, insertMediaSchema } from "@shared/schema";
 import { z } from "zod";
@@ -9,6 +10,15 @@ import multer from "multer";
 import cloudinary from "./cloudinary";
 import { Readable } from "stream";
 import { generateToken, authenticateFlexible } from "./jwt";
+
+// Rate limiter for auth endpoints (stricter)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // 5 attempts
+  message: "Too many attempts, please try again after 15 minutes",
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // Configure Multer for memory storage with 200MB limit for large videos
 const upload = multer({
@@ -75,7 +85,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   setupHealthCheck(app);
   
   // Auth routes
-  app.post("/api/auth/signup", async (req: Request, res: Response, next: NextFunction) => {
+  app.post("/api/auth/signup", authLimiter, async (req: Request, res: Response, next: NextFunction) => {
     try {
       const userData = insertUserSchema.parse(req.body);
       
@@ -116,7 +126,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/auth/login", (req: Request, res: Response, next: NextFunction) => {
+  app.post("/api/auth/login", authLimiter, (req: Request, res: Response, next: NextFunction) => {
     passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) return next(err);
       if (!user) {
@@ -174,7 +184,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       next(error);
     }
-  });  // Album routes
+  });
+
+  // Delete account - GDPR compliance
+  app.delete("/api/auth/account", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const userId = req.user!.id;
+      
+      // Get all albums for this user
+      const albums = await storage.getAlbumsByUserId(userId);
+      
+      // Delete all media items and their Cloudinary files
+      for (const album of albums) {
+        const mediaItems = await storage.getMediaByAlbumId(album.id);
+        
+        for (const media of mediaItems) {
+          // Delete from Cloudinary
+          if (media.path.includes('cloudinary.com')) {
+            try {
+              const urlParts = media.path.split('/');
+              const filename = urlParts[urlParts.length - 1];
+              const publicId = `cloudmediavault/${filename.split('.')[0]}`;
+              const resourceType = media.type.startsWith('video/') ? 'video' : 'image';
+              
+              await cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
+            } catch (cloudinaryError) {
+              console.error('Failed to delete from Cloudinary:', cloudinaryError);
+            }
+          }
+          
+          // Delete from database
+          await storage.deleteMedia(media.id);
+        }
+        
+        // Delete album
+        await storage.deleteAlbum(album.id);
+      }
+      
+      // Delete user account
+      await storage.deleteUser(userId);
+      
+      // Log out
+      req.logout((err: any) => {
+        if (err) console.error('Logout error:', err);
+      });
+      
+      res.json({ message: "Account deleted successfully" });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Album routes
   app.get("/api/albums", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
     try {
       const albums = await storage.getAlbumsByUserId(req.user!.id);
