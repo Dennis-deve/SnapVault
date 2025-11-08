@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
+import { copyFileSync } from "fs";
 
 export default defineConfig({
   plugins: [
@@ -18,6 +19,20 @@ export default defineConfig({
           ),
         ]
       : []),
+    // Custom plugin to copy _redirects file for Render Static Site routing
+    {
+      name: 'copy-redirects',
+      closeBundle() {
+        const src = path.resolve(import.meta.dirname, "client/public/_redirects");
+        const dest = path.resolve(import.meta.dirname, "dist/public/_redirects");
+        try {
+          copyFileSync(src, dest);
+          console.log('✅ Copied _redirects file for SPA routing');
+        } catch (err) {
+          console.error('⚠️ Failed to copy _redirects:', err);
+        }
+      }
+    }
   ],
   resolve: {
     alias: {

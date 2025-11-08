@@ -235,6 +235,58 @@
   body {
     @apply font-sans antialiased bg-background text-foreground;
   }
+  
+  /* Mobile optimization for all devices */
+  html {
+    -webkit-text-size-adjust: 100%; /* Prevent text scaling on iOS */
+    -webkit-tap-highlight-color: transparent; /* Remove tap highlight */
+    touch-action: manipulation; /* Improve touch responsiveness */
+  }
+  
+  /* Ensure smooth scrolling on all mobile devices */
+  * {
+    -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+  }
+}
+
+/* Mobile-first responsive padding - works on all devices */
+@media (max-width: 640px) {
+  /* Reduce padding on small screens */
+  .container {
+    @apply px-3;
+  }
+  
+  /* Ensure touch targets are at least 44px (iOS) / 48px (Android) */
+  button, a, input, select, textarea {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* Better spacing for mobile cards */
+  .card {
+    @apply p-3;
+  }
+  
+  /* Optimize modals and dialogs for mobile */
+  [role="dialog"] {
+    @apply max-h-[90vh] overflow-y-auto;
+  }
+}
+
+/* Extra small devices (old Android, small iPhones) */
+@media (max-width: 375px) {
+  .container {
+    @apply px-2;
+  }
+  
+  .card {
+    @apply p-2;
+  }
+  
+  /* Reduce font sizes slightly for very small screens */
+  body {
+    font-size: 14px;
+  }
 }
 
 /**
