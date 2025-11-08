@@ -339,9 +339,11 @@ git push origin main
 **Cause**: File too large or Cloudinary credentials wrong
 
 **Solution**:
-1. Check file size (max 100MB)
+1. Check file size (max 200MB supported)
 2. Verify Cloudinary env vars in backend
 3. Test Cloudinary credentials in dashboard
+4. For files > 100MB, ensure stable internet connection
+5. Videos may take 1-2 minutes to process on Cloudinary
 
 ### Issue: Backend Sleeps (Free Tier)
 

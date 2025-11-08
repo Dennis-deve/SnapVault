@@ -10,11 +10,11 @@ import cloudinary from "./cloudinary";
 import { Readable } from "stream";
 import { generateToken, authenticateFlexible } from "./jwt";
 
-// Configure Multer for memory storage
+// Configure Multer for memory storage with 200MB limit for large videos
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 100 * 1024 * 1024, // 100MB limit
+    fileSize: 200 * 1024 * 1024, // 200MB limit (supports 100+MB files)
   },
 });
 

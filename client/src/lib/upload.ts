@@ -7,6 +7,7 @@ function getToken(): string | null {
 
 /**
  * Compress and resize image before upload for faster mobile uploads
+ * Skips compression for files > 100MB (likely high-quality photos/videos)
  */
 async function compressImage(file: File): Promise<File> {
   // Only compress images, not videos
@@ -14,8 +15,8 @@ async function compressImage(file: File): Promise<File> {
     return file;
   }
 
-  // Skip if already small (< 500KB)
-  if (file.size < 500 * 1024) {
+  // Skip if already small (< 500KB) or very large (> 100MB - likely needs full quality)
+  if (file.size < 500 * 1024 || file.size > 100 * 1024 * 1024) {
     return file;
   }
 

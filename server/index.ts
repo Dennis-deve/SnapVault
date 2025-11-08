@@ -52,16 +52,16 @@ declare module 'http' {
   }
 }
 
-// Increase body size limit to 500MB for large video uploads
+// Increase body size limit to 1GB for large video uploads (100+MB files)
 app.use(express.json({
-  limit: '500mb',
+  limit: '1gb',
   verify: (req, _res, buf) => {
     req.rawBody = buf;
   }
 }));
 app.use(express.urlencoded({ 
   extended: false,
-  limit: '500mb'
+  limit: '1gb'
 }));
 
 app.use(
