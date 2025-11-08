@@ -35,8 +35,8 @@ function removeToken() {
 // Helper to make authenticated requests with JWT
 export async function fetchWithAuth(url: string, options: RequestInit = {}) {
   const token = getToken();
-  const headers: HeadersInit = {
-    ...options.headers,
+  const headers: Record<string, string> = {
+    ...(options.headers as Record<string, string>),
   };
   
   if (token) {
