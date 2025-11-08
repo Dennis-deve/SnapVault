@@ -23,13 +23,23 @@ export default defineConfig({
     {
       name: 'copy-redirects',
       closeBundle() {
-        const src = path.resolve(import.meta.dirname, "client/public/_redirects");
-        const dest = path.resolve(import.meta.dirname, "dist/public/_redirects");
+        const srcRedirects = path.resolve(import.meta.dirname, "client/public/_redirects");
+        const destRedirects = path.resolve(import.meta.dirname, "dist/public/_redirects");
+        const srcHeaders = path.resolve(import.meta.dirname, "client/public/_headers");
+        const destHeaders = path.resolve(import.meta.dirname, "dist/public/_headers");
+        
         try {
-          copyFileSync(src, dest);
+          copyFileSync(srcRedirects, destRedirects);
           console.log('✅ Copied _redirects file for SPA routing');
         } catch (err) {
           console.error('⚠️ Failed to copy _redirects:', err);
+        }
+        
+        try {
+          copyFileSync(srcHeaders, destHeaders);
+          console.log('✅ Copied _headers file for security');
+        } catch (err) {
+          console.error('⚠️ Failed to copy _headers:', err);
         }
       }
     }

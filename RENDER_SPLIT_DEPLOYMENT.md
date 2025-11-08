@@ -129,6 +129,16 @@ FRONTEND_URL=https://snapvault.onrender.com
    Publish Directory: dist/public
    ```
 
+4. **⚠️ CRITICAL - Add Redirect/Rewrite Rule**:
+   - Click **"Redirects/Rewrites"** tab
+   - Add rule:
+     ```
+     Source: /*
+     Destination: /index.html
+     Action: Rewrite
+     ```
+   - This fixes 404 errors on page refresh!
+
 4. **Auto-Deploy**: Enable (checked)
 
 #### 2.2 Add Frontend Environment Variable
