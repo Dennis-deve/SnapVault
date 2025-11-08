@@ -1,6 +1,19 @@
 services:
+  # Frontend Static Site
+  - type: web
+    name: snapvault
+    env: static
+    buildCommand: npm install && npm run build:client
+    staticPublishPath: ./dist/public
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        value: https://snapvault-api.onrender.com
+
   # Backend API Service (Node.js + Express)
-  # Deploy this first to get the API URL
   - type: web
     name: snapvault-api
     runtime: node
@@ -26,15 +39,5 @@ services:
         value: 10000
       - key: FRONTEND_URL
         value: https://snapvault.onrender.com
-
-# Frontend Static Site - Deploy via Render Dashboard
-# Instructions:
-# 1. Create new "Static Site" in Render Dashboard
-# 2. Name: snapvault
-# 3. Build Command: npm install && npm run build:client
-# 4. Publish Directory: dist/public
-# 5. Add Environment Variable:
-#    VITE_API_URL=https://snapvault-api.onrender.com
-# 6. Enable Auto-Deploy from GitHub
 
 
