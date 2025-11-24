@@ -45,6 +45,6 @@ services:
       - key: PORT
         value: 10000
       - key: FRONTEND_URL
-        value: https://snapvault.onrender.com
+        value: https://snapvault-moau.onrender.com
 
 

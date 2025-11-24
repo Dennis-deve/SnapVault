@@ -103,19 +103,44 @@ export default function AlbumView() {
   const hasNext = currentMediaIndex >= 0 && currentMediaIndex < mediaItems.length - 1;
   const hasPrevious = currentMediaIndex > 0;
 
-  const handleDownload = () => {
-    if (selectedMedia) {
-      // Create a temporary link to download the file
-      const link = document.createElement('a');
-      link.href = selectedMedia.path;
-      link.download = selectedMedia.filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
+  const handleDownload = async () => {
+    if (!selectedMedia) return;
+    
+    try {
       toast({
         title: "Download started",
-        description: `Downloading ${selectedMedia.filename}`,
+        description: `Downloading ${selectedMedia.filename}...`,
+      });
+
+      // Fetch the file as a blob for proper download
+      const response = await fetch(selectedMedia.path);
+      const blob = await response.blob();
+      
+      // Create a blob URL
+      const blobUrl = window.URL.createObjectURL(blob);
+      
+      // Create a temporary link to trigger download
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = selectedMedia.filename;
+      link.style.display = 'none';
+      
+      document.body.appendChild(link);
+      link.click();
+      
+      // Cleanup
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+      
+      toast({
+        title: "Download complete",
+        description: `${selectedMedia.filename} saved to your device`,
+      });
+    } catch (error) {
+      toast({
+        title: "Download failed",
+        description: "Failed to download the file. Please try again.",
+        variant: "destructive",
       });
     }
   };

@@ -121,18 +121,18 @@ export function MediaViewer({
             </Button>
           )}
 
-          <div className="flex-1 flex items-center justify-center p-12">
+          <div className="flex-1 flex items-center justify-center p-4 sm:p-8 md:p-12 overflow-hidden">
             {type.startsWith('image/') ? (
               <img
                 src={path}
                 alt={filename}
-                className="max-w-full max-h-full object-contain"
+                className="w-full h-auto max-h-[calc(95vh-100px)] object-contain"
               />
             ) : type.startsWith('video/') ? (
               <video
                 src={path}
                 controls
-                className="max-w-full max-h-full"
+                className="w-full h-auto max-h-[calc(95vh-100px)] object-contain"
               />
             ) : null}
           </div>
