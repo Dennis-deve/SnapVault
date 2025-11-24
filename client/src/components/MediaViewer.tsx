@@ -1,6 +1,6 @@
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Download, X, Trash2 } from "lucide-react";
+import { Download, X, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,9 +21,25 @@ interface MediaViewerProps {
   path: string;
   onDownload?: () => void;
   onDelete?: () => void;
+  onNext?: () => void;
+  onPrevious?: () => void;
+  hasNext?: boolean;
+  hasPrevious?: boolean;
 }
 
-export function MediaViewer({ open, onOpenChange, filename, type, path, onDownload, onDelete }: MediaViewerProps) {
+export function MediaViewer({ 
+  open, 
+  onOpenChange, 
+  filename, 
+  type, 
+  path, 
+  onDownload, 
+  onDelete,
+  onNext,
+  onPrevious,
+  hasNext,
+  hasPrevious
+}: MediaViewerProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[95vw] max-h-[95vh] p-0 border-0 bg-background">
@@ -76,6 +92,34 @@ export function MediaViewer({ open, onOpenChange, filename, type, path, onDownlo
               <X className="h-5 w-5" />
             </Button>
           </div>
+
+          {/* Previous Button */}
+          {hasPrevious && onPrevious && (
+            <Button
+              size="icon"
+              variant="secondary"
+              className="absolute left-4 top-1/2 -translate-y-1/2 z-10 rounded-full h-12 w-12 shadow-lg"
+              onClick={onPrevious}
+              data-testid="button-previous"
+              title="Previous media"
+            >
+              <ChevronLeft className="h-6 w-6" />
+            </Button>
+          )}
+
+          {/* Next Button */}
+          {hasNext && onNext && (
+            <Button
+              size="icon"
+              variant="secondary"
+              className="absolute right-4 top-1/2 -translate-y-1/2 z-10 rounded-full h-12 w-12 shadow-lg"
+              onClick={onNext}
+              data-testid="button-next"
+              title="Next media"
+            >
+              <ChevronRight className="h-6 w-6" />
+            </Button>
+          )}
 
           <div className="flex-1 flex items-center justify-center p-12">
             {type.startsWith('image/') ? (

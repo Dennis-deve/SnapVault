@@ -45,7 +45,7 @@ export function Navbar({ onMenuClick, showMenu, user, onSettingsClick, onLogout,
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2">
           {onHomeClick && (
             <Button
               variant="ghost"
@@ -53,6 +53,7 @@ export function Navbar({ onMenuClick, showMenu, user, onSettingsClick, onLogout,
               onClick={onHomeClick}
               data-testid="button-home"
               title="Home"
+              className="h-10 w-10 sm:h-11 sm:w-11"
             >
               <Home className="h-5 w-5" />
             </Button>
@@ -64,6 +65,7 @@ export function Navbar({ onMenuClick, showMenu, user, onSettingsClick, onLogout,
               onClick={onSearchClick}
               data-testid="button-search"
               title="Search"
+              className="h-10 w-10 sm:h-11 sm:w-11"
             >
               <Search className="h-5 w-5" />
             </Button>

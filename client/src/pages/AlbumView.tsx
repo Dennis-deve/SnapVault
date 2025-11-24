@@ -82,6 +82,27 @@ export default function AlbumView() {
     setViewerOpen(true);
   };
 
+  const handleNextMedia = () => {
+    const currentIndex = mediaItems.findIndex((item: any) => item.id === selectedMedia?.id);
+    if (currentIndex < mediaItems.length - 1) {
+      setSelectedMedia(mediaItems[currentIndex + 1]);
+    }
+  };
+
+  const handlePreviousMedia = () => {
+    const currentIndex = mediaItems.findIndex((item: any) => item.id === selectedMedia?.id);
+    if (currentIndex > 0) {
+      setSelectedMedia(mediaItems[currentIndex - 1]);
+    }
+  };
+
+  const currentMediaIndex = selectedMedia 
+    ? mediaItems.findIndex((item: any) => item.id === selectedMedia.id)
+    : -1;
+  
+  const hasNext = currentMediaIndex >= 0 && currentMediaIndex < mediaItems.length - 1;
+  const hasPrevious = currentMediaIndex > 0;
+
   const handleDownload = () => {
     if (selectedMedia) {
       // Create a temporary link to download the file
@@ -323,6 +344,10 @@ export default function AlbumView() {
               path={selectedMedia.path || ""}
               onDownload={handleDownload}
               onDelete={handleDeleteMedia}
+              onNext={handleNextMedia}
+              onPrevious={handlePreviousMedia}
+              hasNext={hasNext}
+              hasPrevious={hasPrevious}
             />
           )}
         </div>

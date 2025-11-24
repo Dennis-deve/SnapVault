@@ -110,6 +110,27 @@ export default function Search() {
     deleteMediaMutation.mutate(selectedMedia.id);
   };
 
+  const handleNextMedia = () => {
+    const currentIndex = filteredResults.findIndex((item) => item.id === selectedMedia?.id);
+    if (currentIndex < filteredResults.length - 1) {
+      setSelectedMedia(filteredResults[currentIndex + 1]);
+    }
+  };
+
+  const handlePreviousMedia = () => {
+    const currentIndex = filteredResults.findIndex((item) => item.id === selectedMedia?.id);
+    if (currentIndex > 0) {
+      setSelectedMedia(filteredResults[currentIndex - 1]);
+    }
+  };
+
+  const currentMediaIndex = selectedMedia 
+    ? filteredResults.findIndex((item) => item.id === selectedMedia.id)
+    : -1;
+  
+  const hasNext = currentMediaIndex >= 0 && currentMediaIndex < filteredResults.length - 1;
+  const hasPrevious = currentMediaIndex > 0;
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar
@@ -217,6 +238,10 @@ export default function Search() {
           type={selectedMedia.type}
           path={selectedMedia.path}
           onDelete={handleDeleteMedia}
+          onNext={handleNextMedia}
+          onPrevious={handlePreviousMedia}
+          hasNext={hasNext}
+          hasPrevious={hasPrevious}
         />
       )}
       
