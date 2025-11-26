@@ -1,6 +1,7 @@
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Download, X, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
+import { useEffect, useState, useRef } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,10 +41,77 @@ export function MediaViewer({
   hasNext,
   hasPrevious
 }: MediaViewerProps) {
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Minimum swipe distance (in px) to trigger next/previous
+  const minSwipeDistance = 50;
+
+  // Add smooth transition effect when media changes
+  useEffect(() => {
+    if (open) {
+      setIsTransitioning(true);
+      const timer = setTimeout(() => setIsTransitioning(false), 150);
+      return () => clearTimeout(timer);
+    }
+  }, [path, open]);
+
+  // Handle keyboard navigation
+  useEffect(() => {
+    if (!open) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft' && hasPrevious && onPrevious) {
+        onPrevious();
+      } else if (e.key === 'ArrowRight' && hasNext && onNext) {
+        onNext();
+      } else if (e.key === 'Escape') {
+        onOpenChange(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [open, hasNext, hasPrevious, onNext, onPrevious, onOpenChange]);
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
+
+  const onTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+    
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+
+    if (isLeftSwipe && hasNext && onNext) {
+      onNext();
+    } else if (isRightSwipe && hasPrevious && onPrevious) {
+      onPrevious();
+    }
+
+    setTouchStart(null);
+    setTouchEnd(null);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[95vw] max-h-[95vh] p-0 border-0 bg-background">
-        <div className="relative h-[95vh] flex flex-col">
+        <div 
+          ref={containerRef}
+          className="relative h-[95vh] flex flex-col"
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+        >
           <div className="absolute top-4 right-4 z-10 flex gap-2">
             {onDelete && (
               <AlertDialog>
@@ -98,12 +166,12 @@ export function MediaViewer({
             <Button
               size="icon"
               variant="secondary"
-              className="absolute left-4 top-1/2 -translate-y-1/2 z-10 rounded-full h-12 w-12 shadow-lg"
+              className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 z-10 rounded-full h-14 w-14 sm:h-12 sm:w-12 shadow-lg backdrop-blur-sm bg-background/80 hover:bg-background/90 active:scale-95 transition-all"
               onClick={onPrevious}
               data-testid="button-previous"
-              title="Previous media"
+              title="Previous (← or swipe right)"
             >
-              <ChevronLeft className="h-6 w-6" />
+              <ChevronLeft className="h-7 w-7 sm:h-6 sm:w-6" />
             </Button>
           )}
 
@@ -112,12 +180,12 @@ export function MediaViewer({
             <Button
               size="icon"
               variant="secondary"
-              className="absolute right-4 top-1/2 -translate-y-1/2 z-10 rounded-full h-12 w-12 shadow-lg"
+              className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 z-10 rounded-full h-14 w-14 sm:h-12 sm:w-12 shadow-lg backdrop-blur-sm bg-background/80 hover:bg-background/90 active:scale-95 transition-all"
               onClick={onNext}
               data-testid="button-next"
-              title="Next media"
+              title="Next (→ or swipe left)"
             >
-              <ChevronRight className="h-6 w-6" />
+              <ChevronRight className="h-7 w-7 sm:h-6 sm:w-6" />
             </Button>
           )}
 
@@ -126,13 +194,13 @@ export function MediaViewer({
               <img
                 src={path}
                 alt={filename}
-                className="w-full h-auto max-h-[calc(95vh-100px)] object-contain"
+                className={`w-full h-auto max-h-[calc(95vh-100px)] object-contain transition-opacity duration-150 ${isTransitioning ? 'opacity-0' : 'opacity-100'}`}
               />
             ) : type.startsWith('video/') ? (
               <video
                 src={path}
                 controls
-                className="w-full h-auto max-h-[calc(95vh-100px)] object-contain"
+                className={`w-full h-auto max-h-[calc(95vh-100px)] object-contain transition-opacity duration-150 ${isTransitioning ? 'opacity-0' : 'opacity-100'}`}
               />
             ) : null}
           </div>
