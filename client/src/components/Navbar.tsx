@@ -39,13 +39,13 @@ export function Navbar({ onMenuClick, showMenu, user, onSettingsClick, onLogout,
               <Menu className="h-5 w-5" />
             </Button>
           )}
-          <div className="flex items-center gap-2 cursor-pointer" onClick={onHomeClick}>
-            <img src={logoImage} alt="SnapVault" className="h-8 w-8" />
+          <div className="inline-flex items-center cursor-pointer pl-3 pr-2" onClick={onHomeClick}>
+            <img src={logoImage} alt="SnapVault" className="h-6 w-6 mr-2" />
             <h1 className="text-xl font-display font-bold text-primary">SnapVault</h1>
           </div>
         </div>
 
-        <div className="flex items-center gap-1 sm:gap-2">
+        <div className="flex items-center gap-2">
           {onHomeClick && (
             <Button
               variant="ghost"
@@ -53,9 +53,9 @@ export function Navbar({ onMenuClick, showMenu, user, onSettingsClick, onLogout,
               onClick={onHomeClick}
               data-testid="button-home"
               title="Home"
-              className="h-10 w-10 sm:h-11 sm:w-11"
+              className="h-10 w-10 p-2"
             >
-              <Home className="h-5 w-5" />
+              <Home className="h-6 w-6" />
             </Button>
           )}
           {onSearchClick && (
@@ -65,9 +65,9 @@ export function Navbar({ onMenuClick, showMenu, user, onSettingsClick, onLogout,
               onClick={onSearchClick}
               data-testid="button-search"
               title="Search"
-              className="h-10 w-10 sm:h-11 sm:w-11"
+              className="h-10 w-10 p-2"
             >
-              <Search className="h-5 w-5" />
+              <Search className="h-6 w-6" />
             </Button>
           )}
           <ThemeToggle />

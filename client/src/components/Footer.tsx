@@ -10,8 +10,8 @@ export function Footer({ className = "" }: { className?: string }) {
           <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
             <span>© {currentYear} DESTECH SOLUTIONS. All rights reserved.</span>
           </div>
-          <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-            <Phone className="h-4 w-4" />
+          <div className="inline-flex items-center gap-[8px] text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">
+            <Phone className="h-[18px] w-[18px] flex-shrink-0" />
             <a 
               href="tel:+233544216532" 
               className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
