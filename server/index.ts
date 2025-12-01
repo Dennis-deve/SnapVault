@@ -1,13 +1,16 @@
 import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
 import passport from "passport";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
 import { registerRoutes } from "./routes";
 import { setupAuth } from "./auth";
+import { pool } from "./db";
 
 const app = express();
+const PgSession = connectPgSimple(session);
 
 // Simple logging function
 function log(message: string, source = "express") {
@@ -87,15 +90,21 @@ app.use(express.urlencoded({
 
 app.use(
   session({
+    store: new PgSession({
+      pool: pool,
+      tableName: 'session',
+      createTableIfMissing: true,
+      pruneSessionInterval: 60 * 15, // Clean up expired sessions every 15 minutes
+    }),
     secret: process.env.SESSION_SECRET || "snapvault-secret-change-in-production",
     resave: false,
     saveUninitialized: false,
-    proxy: process.env.NODE_ENV === "production", // Trust Render's proxy
+    proxy: process.env.NODE_ENV === "production",
     cookie: {
       maxAge: 1000 * 60 * 60 * 24 * 7, // 1 week
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // Allow cross-domain cookies in production
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
     },
   })
 );
