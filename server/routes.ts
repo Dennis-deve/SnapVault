@@ -11,6 +11,7 @@ import multer from "multer";
 import cloudinary from "./cloudinary";
 import { Readable } from "stream";
 import { generateToken, authenticateFlexible } from "./jwt";
+import { sendPasswordResetEmail } from "./email";
 
 // Rate limiter for auth endpoints (stricter)
 const authLimiter = rateLimit({
@@ -224,20 +225,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         expiresAt,
       });
 
-      // In production, send email here with reset link
-      // For now, we'll log it to console and return it in dev mode
-      const resetUrl = `${req.protocol}://${req.get('host')}/reset-password?token=${resetToken}`;
+      // Send password reset email
+      const resetUrl = `${process.env.CLIENT_URL || req.protocol + '://' + req.get('host')}/reset-password?token=${resetToken}`;
       
-      console.log('Password reset requested for:', email);
-      console.log('Reset URL:', resetUrl);
+      const emailResult = await sendPasswordResetEmail({
+        to: user.email,
+        resetUrl,
+        userName: user.email.split('@')[0], // Use email username as display name
+      });
 
-      // In development, include the token in response
-      // In production, only send via email
-      const isDev = process.env.NODE_ENV !== 'production';
-      
+      // In development, also log to console
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('Password reset requested for:', email);
+        console.log('Reset URL:', resetUrl);
+      }
+
+      // Always return success to prevent email enumeration
       res.json({ 
         message: "If an account exists with this email, you will receive a password reset link.",
-        ...(isDev && { resetToken, resetUrl }) // Only in development
       });
     } catch (error) {
       next(error);

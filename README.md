@@ -218,6 +218,33 @@ CLOUDINARY_API_SECRET=your_api_secret
 SESSION_SECRET=random_32_character_string
 NODE_ENV=production
 PORT=10000
+
+# Email Service (Resend)
+RESEND_API_KEY=re_xxxxxxxxxxxxx
+FROM_EMAIL="SnapVault <noreply@yourdomain.com>"
+CLIENT_URL=https://snapvault.onrender.com
 ```
 
 See `.env.example` for complete list.
+
+### Email Service Setup (Resend)
+
+SnapVault uses [Resend](https://resend.com) for sending password reset emails.
+
+**Free Tier:** 3,000 emails/month (100/day) - No credit card required
+
+**Setup Steps:**
+1. Sign up at [resend.com](https://resend.com)
+2. Verify your domain (or use their test domain `onboarding@resend.dev` for development)
+3. Create an API key in the dashboard
+4. Add `RESEND_API_KEY` to your environment variables
+5. (Optional) Set `FROM_EMAIL` to your verified sender address
+
+**Development Mode:**
+- Without `RESEND_API_KEY`, the reset URL is logged to console
+- Perfect for local testing without email setup
+
+**Production:**
+- Email is sent automatically with a beautiful HTML template
+- Reset link expires in 1 hour for security
+- Professional design matching SnapVault branding

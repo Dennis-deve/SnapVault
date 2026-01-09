@@ -15,7 +15,6 @@ export default function ForgotPassword() {
   const [email, setEmail] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [devResetUrl, setDevResetUrl] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,11 +41,6 @@ export default function ForgotPassword() {
 
       if (!response.ok) {
         throw new Error(data.message || "Failed to send reset email");
-      }
-
-      // In development, show the reset URL
-      if (data.resetUrl) {
-        setDevResetUrl(data.resetUrl);
       }
 
       setIsSubmitted(true);
@@ -97,18 +91,6 @@ export default function ForgotPassword() {
                 If an account exists with <strong>{email}</strong>, you will receive a password reset link shortly.
               </p>
 
-              {devResetUrl && (
-                <div className="mt-4 p-4 bg-muted rounded-lg text-left">
-                  <p className="text-xs text-muted-foreground mb-2">Development Mode - Reset URL:</p>
-                  <a
-                    href={devResetUrl}
-                    className="text-xs text-primary hover:underline break-all"
-                  >
-                    {devResetUrl}
-                  </a>
-                </div>
-              )}
-
               <div className="pt-4 space-y-2">
                 <Button
                   onClick={() => setLocation("/login")}
@@ -123,7 +105,6 @@ export default function ForgotPassword() {
                   onClick={() => {
                     setIsSubmitted(false);
                     setEmail("");
-                    setDevResetUrl("");
                   }}
                   className="text-sm text-primary hover:underline"
                 >
