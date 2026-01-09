@@ -165,7 +165,7 @@ app.use((req, res, next) => {
   } else {
     // In production, serve static files from dist/public
     const path = await import("path");
-    const distPath = path.resolve(import.meta.dirname, "public");
+    const distPath = path.resolve(process.cwd(), "dist/public");
     app.use(express.static(distPath));
     
     // Catch-all route for SPA
