@@ -11,6 +11,8 @@ import { lazy, Suspense } from "react";
 const Onboarding = lazy(() => import("@/pages/Onboarding"));
 const Login = lazy(() => import("@/pages/Login"));
 const Signup = lazy(() => import("@/pages/Signup"));
+const ForgotPassword = lazy(() => import("@/pages/ForgotPassword"));
+const ResetPassword = lazy(() => import("@/pages/ResetPassword"));
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const AlbumView = lazy(() => import("@/pages/AlbumView"));
 const Search = lazy(() => import("@/pages/Search"));
@@ -33,6 +35,8 @@ function Router() {
         <Route path="/" component={Onboarding} />
         <Route path="/login" component={Login} />
         <Route path="/signup" component={Signup} />
+        <Route path="/forgot-password" component={ForgotPassword} />
+        <Route path="/reset-password" component={ResetPassword} />
         <Route path="/dashboard" component={Dashboard} />
         <Route path="/album/:id" component={AlbumView} />
         <Route path="/search" component={Search} />

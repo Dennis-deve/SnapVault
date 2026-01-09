@@ -245,14 +245,18 @@
   
   /* Mobile optimization for all devices */
   html {
-    -webkit-text-size-adjust: 100%; /* Prevent text scaling on iOS */
+    -webkit-text-size-adjust: 100%; /* Prevent text scaling on iOS / older WebKit */
+    -ms-text-size-adjust: 100%; /* IE / older Edge fallback */
+    text-size-adjust: 100%; /* Standard property (not supported in some browsers) */
     -webkit-tap-highlight-color: transparent; /* Remove tap highlight */
     touch-action: manipulation; /* Improve touch responsiveness */
   }
   
-  /* Ensure smooth scrolling on all mobile devices */
-  * {
-    -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+  /* Ensure smooth scrolling on iOS Safari where supported */
+  @supports (-webkit-overflow-scrolling: touch) {
+    * {
+      -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+    }
   }
 }
 

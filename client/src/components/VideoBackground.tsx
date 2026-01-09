@@ -47,6 +47,14 @@ export function VideoBackground({
     }
   }, [currentVideoIndex, videos]);
 
+  // Map overlayOpacity (0-1) to the closest Tailwind opacity utility (0,5,10,20,25,30,40,50,60,70,75,80,90,95,100)
+  const _percent = Math.round(Math.min(Math.max(overlayOpacity, 0), 1) * 100);
+  const _steps = [0,5,10,20,25,30,40,50,60,70,75,80,90,95,100];
+  const closest = _steps.reduce((prev, curr) =>
+    Math.abs(curr - _percent) < Math.abs(prev - _percent) ? curr : prev
+  );
+  const overlayOpacityClass = `opacity-${closest}`;
+
   return (
     <div className={`fixed inset-0 overflow-hidden ${className}`}>
       {/* Current Video */}
@@ -62,19 +70,10 @@ export function VideoBackground({
         src={videos[currentVideoIndex]}
       />
 
-      {/* Preload next video (hidden) */}
-      <video
-        ref={nextVideoRef}
-        muted
-        playsInline
-        className="hidden"
-      />
-
       {/* Gradient Overlay for text readability */}
       {overlay && (
         <div 
-          className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/50 to-black/80"
-          style={{ opacity: overlayOpacity } as React.CSSProperties}
+          className={`absolute inset-0 bg-gradient-to-b from-black/70 via-black/50 to-black/80 ${overlayOpacityClass}`}
         />
       )}
 

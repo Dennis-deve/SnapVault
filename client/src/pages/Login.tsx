@@ -125,7 +125,7 @@ export default function Login() {
 
         <div className="mt-6 text-center space-y-2">
           <button
-            onClick={() => console.log("Forgot password")}
+            onClick={() => setLocation("/forgot-password")}
             className="text-sm text-primary hover:underline"
             data-testid="button-forgot-password"
           >
