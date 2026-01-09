@@ -1,7 +1,17 @@
 import { Resend } from 'resend';
 
-// Initialize Resend with API key from environment
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Initialize Resend lazily to avoid startup errors if API key is missing
+let resend: Resend | null = null;
+
+function getResendClient(): Resend | null {
+  if (!process.env.RESEND_API_KEY) {
+    return null;
+  }
+  if (!resend) {
+    resend = new Resend(process.env.RESEND_API_KEY);
+  }
+  return resend;
+}
 
 // Default sender email (you'll configure this in Resend dashboard)
 const FROM_EMAIL = process.env.FROM_EMAIL || 'SnapVault <onboarding@resend.dev>';
@@ -21,14 +31,16 @@ export async function sendPasswordResetEmail({
   userName = 'User',
 }: SendPasswordResetEmailParams): Promise<{ success: boolean; error?: string }> {
   try {
-    // Check if Resend is configured
-    if (!process.env.RESEND_API_KEY) {
+    // Get Resend client (returns null if API key not configured)
+    const client = getResendClient();
+    
+    if (!client) {
       console.warn('RESEND_API_KEY not configured. Email not sent.');
       console.log('Password reset URL:', resetUrl);
       return { success: false, error: 'Email service not configured' };
     }
 
-    const { data, error } = await resend.emails.send({
+    const { data, error } = await client.emails.send({
       from: FROM_EMAIL,
       to: [to],
       subject: 'Reset Your SnapVault Password',
