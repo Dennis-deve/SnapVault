@@ -14,7 +14,8 @@ function getResendClient(): Resend | null {
 }
 
 // Default sender email (you'll configure this in Resend dashboard)
-const FROM_EMAIL = process.env.FROM_EMAIL || 'SnapVault <onboarding@resend.dev>';
+const FROM_EMAIL = process.env.FROM_EMAIL || 'onboarding@resend.dev';
+const FROM_NAME = 'SnapVault';
 
 interface SendPasswordResetEmailParams {
   to: string;
@@ -41,7 +42,7 @@ export async function sendPasswordResetEmail({
     }
 
     const { data, error } = await client.emails.send({
-      from: FROM_EMAIL,
+      from: `${FROM_NAME} <${FROM_EMAIL}>`,
       to: [to],
       subject: 'Reset Your SnapVault Password',
       html: getPasswordResetEmailTemplate(resetUrl, userName),
