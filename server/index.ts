@@ -165,12 +165,20 @@ app.use((req, res, next) => {
     await setupVite(app, server);
   } else {
     // In production, serve static files from dist/public
-    const distPath = path.join(process.cwd(), "dist", "public");
+    // The compiled server is at dist/index.js, so public files are at dist/public
+    const { fileURLToPath } = await import('url');
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+    const distPath = path.join(__dirname, "public");
+    
+    log(`Serving static files from: ${distPath}`);
     app.use(express.static(distPath));
     
     // Catch-all route for SPA
     app.get("*", (_req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+      const indexPath = path.join(distPath, "index.html");
+      log(`Serving index.html from: ${indexPath}`);
+      res.sendFile(indexPath);
     });
   }
 
