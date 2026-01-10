@@ -49,7 +49,7 @@ export async function sendPasswordResetEmail({
     });
 
     if (error) {
-      console.error('Failed to send email:', error);
+      console.error('Resend API error details:', JSON.stringify(error, null, 2));
       return { success: false, error: error.message };
     }
 

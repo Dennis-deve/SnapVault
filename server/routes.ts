@@ -234,10 +234,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userName: user.email.split('@')[0], // Use email username as display name
       });
 
+      // Log email result for debugging
+      if (!emailResult.success && emailResult.error) {
+        console.error('Email sending failed:', emailResult.error);
+      }
+
       // In development, also log to console
       if (process.env.NODE_ENV !== 'production') {
         console.log('Password reset requested for:', email);
         console.log('Reset URL:', resetUrl);
+        console.log('Email result:', emailResult);
       }
 
       // Always return success to prevent email enumeration
