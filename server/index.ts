@@ -5,6 +5,7 @@ import connectPgSimple from "connect-pg-simple";
 import passport from "passport";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
+import path from "path";
 import { registerRoutes } from "./routes";
 import { setupAuth } from "./auth";
 import { pool } from "./db";
@@ -164,13 +165,12 @@ app.use((req, res, next) => {
     await setupVite(app, server);
   } else {
     // In production, serve static files from dist/public
-    const path = await import("path");
-    const distPath = path.resolve(process.cwd(), "dist/public");
+    const distPath = path.join(process.cwd(), "dist", "public");
     app.use(express.static(distPath));
     
     // Catch-all route for SPA
     app.get("*", (_req, res) => {
-      res.sendFile(path.resolve(distPath, "index.html"));
+      res.sendFile(path.join(distPath, "index.html"));
     });
   }
 
