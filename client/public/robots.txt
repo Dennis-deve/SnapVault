@@ -1,0 +1,21 @@
+# Allow all search engines to crawl the site
+User-agent: *
+Allow: /
+
+# Public pages that should be indexed
+Allow: /login
+Allow: /signup
+Allow: /forgot-password
+
+# Private pages that should not be indexed (require authentication)
+Disallow: /dashboard
+Disallow: /albums/*
+Disallow: /settings
+Disallow: /search
+Disallow: /api/*
+
+# Sitemap location
+Sitemap: https://snapvault.onrender.com/sitemap.xml
+
+# Crawl rate (optional - helps prevent server overload)
+Crawl-delay: 1
