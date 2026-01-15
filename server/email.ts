@@ -24,6 +24,19 @@ interface SendPasswordResetEmailParams {
 }
 
 /**
+ * Get properly formatted FROM address
+ * Handles cases where FROM_EMAIL already includes a name format
+ */
+function getFromAddress(): string {
+  // If FROM_EMAIL already contains < and >, it's already formatted
+  if (FROM_EMAIL.includes('<') && FROM_EMAIL.includes('>')) {
+    return FROM_EMAIL;
+  }
+  // Otherwise, wrap it with the name
+  return `${FROM_NAME} <${FROM_EMAIL}>`;
+}
+
+/**
  * Send password reset email with a professional HTML template
  */
 export async function sendPasswordResetEmail({
@@ -42,7 +55,7 @@ export async function sendPasswordResetEmail({
     }
 
     const { data, error } = await client.emails.send({
-      from: `${FROM_NAME} <${FROM_EMAIL}>`,
+      from: getFromAddress(),
       to: [to],
       subject: 'Reset Your SnapVault Password',
       html: getPasswordResetEmailTemplate(resetUrl, userName),
