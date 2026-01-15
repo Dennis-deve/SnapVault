@@ -11,6 +11,13 @@ import { setupAuth } from "./auth";
 import { pool } from "./db";
 
 const app = express();
+
+// Trust the first proxy (e.g. Render's router) so client IPs from
+// X-Forwarded-For are respected by middleware like express-rate-limit.
+// Only enable in production where the app runs behind a proxy.
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
 const PgSession = connectPgSimple(session);
 
 // Simple logging function
