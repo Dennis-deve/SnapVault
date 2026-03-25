@@ -26,14 +26,24 @@ interface SendPasswordResetEmailParams {
 /**
  * Get properly formatted FROM address
  * Handles cases where FROM_EMAIL already includes a name format
+ * Resend accepts: "email@domain.com" or "Name <email@domain.com>"
  */
 function getFromAddress(): string {
-  // If FROM_EMAIL already contains < and >, it's already formatted
-  if (FROM_EMAIL.includes('<') && FROM_EMAIL.includes('>')) {
-    return FROM_EMAIL;
+  // Trim whitespace
+  const cleanEmail = FROM_EMAIL.trim();
+  
+  // If FROM_EMAIL already contains < and >, it's already formatted (e.g., "SnapVault <noreply@domain.com>")
+  if (cleanEmail.includes('<') && cleanEmail.includes('>')) {
+    // Validate the format is correct
+    const match = cleanEmail.match(/^(.+?)\s*<([^>]+)>$/);
+    if (match) {
+      return cleanEmail; // Already properly formatted
+    }
   }
-  // Otherwise, wrap it with the name
-  return `${FROM_NAME} <${FROM_EMAIL}>`;
+  
+  // If it's just an email, wrap it with the name
+  // Resend format: "Name <email@domain.com>"
+  return `${FROM_NAME} <${cleanEmail}>`;
 }
 
 /**
@@ -45,6 +55,13 @@ export async function sendPasswordResetEmail({
   userName = 'User',
 }: SendPasswordResetEmailParams): Promise<{ success: boolean; error?: string }> {
   try {
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(to)) {
+      console.error('Invalid email format:', to);
+      return { success: false, error: 'Invalid email format' };
+    }
+
     // Get Resend client (returns null if API key not configured)
     const client = getResendClient();
     
@@ -54,9 +71,16 @@ export async function sendPasswordResetEmail({
       return { success: false, error: 'Email service not configured' };
     }
 
+    const fromAddress = getFromAddress();
+    console.log('Sending email with params:', {
+      from: fromAddress,
+      to: to,
+      subject: 'Reset Your SnapVault Password'
+    });
+
     const { data, error } = await client.emails.send({
-      from: getFromAddress(),
-      to: [to],
+      from: fromAddress,
+      to: to, // Resend expects a string or array of strings
       subject: 'Reset Your SnapVault Password',
       html: getPasswordResetEmailTemplate(resetUrl, userName),
     });

@@ -197,6 +197,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Email is required" });
       }
 
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return res.status(400).json({ message: "Invalid email format" });
+      }
+
       // Find user by email
       const user = await storage.getUserByEmail(email);
       
@@ -225,8 +231,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         expiresAt,
       });
 
-      // Send password reset email
-      const resetUrl = `${process.env.CLIENT_URL || req.protocol + '://' + req.get('host')}/reset-password?token=${resetToken}`;
+      // Build reset URL - use CLIENT_URL from env or fall back to request host
+      const baseUrl = process.env.CLIENT_URL || `${req.protocol}://${req.get('host')}`;
+      const resetUrl = `${baseUrl}/reset-password?token=${resetToken}`;
+      
+      console.log('Attempting to send password reset email to:', user.email);
+      console.log('Reset URL:', resetUrl);
       
       const emailResult = await sendPasswordResetEmail({
         to: user.email,
@@ -235,14 +245,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       // Log email result for debugging
-      if (!emailResult.success && emailResult.error) {
+      if (!emailResult.success) {
         console.error('Email sending failed:', emailResult.error);
+        // In development, show the error to help debug
+        if (process.env.NODE_ENV !== 'production') {
+          return res.status(500).json({ 
+            message: "Failed to send reset email", 
+            error: emailResult.error,
+            resetUrl: resetUrl // Include reset URL in dev mode
+          });
+        }
+      } else {
+        console.log('Password reset email sent successfully');
       }
 
       // In development, also log to console
       if (process.env.NODE_ENV !== 'production') {
         console.log('Password reset requested for:', email);
-        console.log('Reset URL:', resetUrl);
         console.log('Email result:', emailResult);
       }
 
@@ -251,6 +270,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: "If an account exists with this email, you will receive a password reset link.",
       });
     } catch (error) {
+      console.error('Forgot password error:', error);
       next(error);
     }
   });
