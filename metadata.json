@@ -1,0 +1,6 @@
+{
+  "name": "SnapVault",
+  "description": "SnapVault V2 Redesign & Rebuild - Premium Secure Cloud Photo and Video Storage with Magic PIN lockable albums, secure share links, activity logs, and beautiful modern transitions.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

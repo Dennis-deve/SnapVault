@@ -1,0 +1,49 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temporary files
+.local/
+*.tmp
+*.temp
+
+# Build cache
+.cache/
+.vite/
+
+# Server public assets (generated)
+server/public
+
+# Misc
+vite.config.ts.*
+*.tar.gz
+.vercel
+.railway
+.vercel
+
+CloudMediaVault.zip
