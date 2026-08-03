@@ -1,0 +1,578 @@
+/* stylelint-disable at-rule-no-unknown */
+/* If this file is processed by PostCSS + Tailwind, the @tailwind rules are valid.
+   This directive silences stylelint's "unknown at rule" errors for Tailwind directives. */
+/* stylelint-disable-next-line at-rule-no-unknown */
+@tailwind base;
+/* stylelint-disable-next-line at-rule-no-unknown */
+@tailwind components;
+/* stylelint-disable-next-line at-rule-no-unknown */
+@tailwind utilities;
+/* stylelint-enable at-rule-no-unknown */
+
+/* LIGHT MODE */
+:root {
+  --button-outline: rgba(0,0,0, .10);
+  --badge-outline: rgba(0,0,0, .05);
+
+  /* Automatic computation of border around primary / danger buttons */
+  --opaque-button-border-intensity: -8; /* In terms of percentages */
+
+  /* Backgrounds applied on top of other backgrounds when hovered/active */
+  --elevate-1: rgba(0,0,0, .03);
+  --elevate-2: rgba(0,0,0, .08);
+
+  /* Modern cool-grey app background, matching the Figma prototype (#f5f7fa) */
+  --background: 216 27% 97%;
+
+  --foreground: 234 25% 13%;
+
+  --border: 220 14% 90%;
+
+  --card: 0 0% 100%;
+
+  --card-foreground: 234 25% 13%;
+
+  --card-border: 220 14% 93%;
+
+  --sidebar: 0 0% 100%;
+
+  --sidebar-foreground: 234 25% 13%;
+
+  --sidebar-border: 220 14% 92%;
+
+  --sidebar-primary: 217 68% 60%;
+
+  --sidebar-primary-foreground: 0 0% 100%;
+
+  --sidebar-accent: 217 68% 95%;
+
+  --sidebar-accent-foreground: 217 68% 45%;
+
+  --sidebar-ring: 217 68% 60%;
+
+  --popover: 0 0% 100%;
+
+  --popover-foreground: 234 25% 13%;
+
+  --popover-border: 220 14% 92%;
+
+  /* Figma accent blue #4a90e2 */
+  --primary: 217 68% 60%;
+
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 220 20% 95%;
+
+  --secondary-foreground: 234 25% 13%;
+
+  --muted: 220 20% 95%;
+
+  --muted-foreground: 231 8% 56%;
+
+  --accent: 217 68% 95%;
+
+  --accent-foreground: 217 68% 45%;
+
+  --destructive: 0 84% 60%;
+
+  --destructive-foreground: 0 0% 100%;
+
+  --input: 220 14% 88%;
+  --ring: 217 68% 60%;
+  --chart-1: 217 68% 60%;
+  --chart-2: 158 64% 52%;
+  --chart-3: 280 65% 60%;
+  --chart-4: 36 77% 55%;
+  --chart-5: 340 75% 55%;
+
+  --font-sans: Inter, sans-serif;
+  --font-serif: Georgia, serif;
+  --font-mono: Menlo, monospace;
+  --radius: .875rem; /* 14px — softer, more modern card corners */
+  --shadow-2xs: 0px 1px 2px 0px rgba(16, 24, 40, 0.04);
+  --shadow-xs: 0px 1px 2px 0px rgba(16, 24, 40, 0.04);
+  --shadow-sm: 0px 2px 8px -2px rgba(16, 24, 40, 0.06);
+  --shadow: 0px 4px 14px 0px rgba(16, 24, 40, 0.07);
+  --shadow-md: 0px 6px 20px -2px rgba(16, 24, 40, 0.08);
+  --shadow-lg: 0px 10px 30px -4px rgba(16, 24, 40, 0.10);
+  --shadow-xl: 0px 16px 40px -8px rgba(16, 24, 40, 0.12);
+  --shadow-2xl: 0px 24px 56px -12px rgba(16, 24, 40, 0.16);
+  --tracking-normal: 0em;
+  --spacing: 0.25rem;
+
+  /* Automatically computed borders - intensity can be controlled by the user by the --opaque-button-border-intensity setting */
+
+  /* Fallback for older browsers */
+  --sidebar-primary-border: hsl(var(--sidebar-primary));
+  --sidebar-primary-border: hsl(from hsl(var(--sidebar-primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+
+  /* Fallback for older browsers */
+  --sidebar-accent-border: hsl(var(--sidebar-accent));
+  --sidebar-accent-border: hsl(from hsl(var(--sidebar-accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+
+  /* Fallback for older browsers */
+  --primary-border: hsl(var(--primary));
+  --primary-border: hsl(from hsl(var(--primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+
+  /* Fallback for older browsers */
+  --secondary-border: hsl(var(--secondary));
+  --secondary-border: hsl(from hsl(var(--secondary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+
+  /* Fallback for older browsers */
+  --muted-border: hsl(var(--muted));
+  --muted-border: hsl(from hsl(var(--muted)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+
+  /* Fallback for older browsers */
+  --accent-border: hsl(var(--accent));
+  --accent-border: hsl(from hsl(var(--accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+
+  /* Fallback for older browsers */
+  --destructive-border: hsl(var(--destructive));
+  --destructive-border: hsl(from hsl(var(--destructive)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+}
+
+.dark {
+  --button-outline: rgba(255,255,255, .10);
+  --badge-outline: rgba(255,255,255, .05);
+
+  --opaque-button-border-intensity: 9;  /* In terms of percentages */
+
+  /* Backgrounds applied on top of other backgrounds when hovered/active */
+  --elevate-1: rgba(255,255,255, .04);
+  --elevate-2: rgba(255,255,255, .09);
+
+  --background: 234 20% 9%;
+
+  --foreground: 220 8% 92%;
+
+  --border: 220 12% 20%;
+
+  --card: 234 16% 13%;
+
+  --card-foreground: 220 8% 92%;
+
+  --card-border: 220 12% 19%;
+
+  --sidebar: 234 16% 12%;
+
+  --sidebar-foreground: 220 8% 92%;
+
+  --sidebar-border: 220 12% 22%;
+
+  --sidebar-primary: 217 68% 60%;
+
+  --sidebar-primary-foreground: 0 0% 100%;
+
+  --sidebar-accent: 217 30% 20%;
+
+  --sidebar-accent-foreground: 220 8% 92%;
+
+  --sidebar-ring: 217 68% 60%;
+
+  --popover: 234 16% 15%;
+
+  --popover-foreground: 220 8% 92%;
+
+  --popover-border: 220 12% 24%;
+
+  --primary: 217 75% 64%;
+
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 220 12% 22%;
+
+  --secondary-foreground: 220 8% 92%;
+
+  --muted: 220 12% 20%;
+
+  --muted-foreground: 220 8% 65%;
+
+  --accent: 217 30% 20%;
+
+  --accent-foreground: 220 8% 92%;
+
+  --destructive: 0 84% 60%;
+
+  --destructive-foreground: 0 0% 100%;
+
+  /* Used as the border around inputs. Dark mode: Should be a border that is light enough to have high contrast when rendered on a --card background. More contrast than standard --border */
+  --input: 220 12% 32%;
+  --ring: 217 75% 64%;
+  --chart-1: 217 75% 68%;
+  --chart-2: 158 64% 62%;
+  --chart-3: 280 65% 70%;
+  --chart-4: 36 77% 65%;
+  --chart-5: 340 75% 65%;
+
+  --shadow-2xs: 0px 1px 2px 0px rgba(0, 0, 0, 0.20);
+  --shadow-xs: 0px 1px 2px 0px rgba(0, 0, 0, 0.20);
+  --shadow-sm: 0px 2px 8px -2px rgba(0, 0, 0, 0.28);
+  --shadow: 0px 4px 14px 0px rgba(0, 0, 0, 0.30);
+  --shadow-md: 0px 6px 20px -2px rgba(0, 0, 0, 0.34);
+  --shadow-lg: 0px 10px 30px -4px rgba(0, 0, 0, 0.38);
+  --shadow-xl: 0px 16px 40px -8px rgba(0, 0, 0, 0.42);
+  --shadow-2xl: 0px 24px 56px -12px rgba(0, 0, 0, 0.48);
+
+  /* Automatically computed borders - intensity can be controlled by the user by the --opaque-button-border-intensity setting */
+  --sidebar-primary-border: hsl(var(--sidebar-primary));
+  --sidebar-primary-border: hsl(from hsl(var(--sidebar-primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+
+  --sidebar-accent-border: hsl(var(--sidebar-accent));
+  --sidebar-accent-border: hsl(from hsl(var(--sidebar-accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+
+  --primary-border: hsl(var(--primary));
+  --primary-border: hsl(from hsl(var(--primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+
+  --secondary-border: hsl(var(--secondary));
+  --secondary-border: hsl(from hsl(var(--secondary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+
+  --muted-border: hsl(var(--muted));
+  --muted-border: hsl(from hsl(var(--muted)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+
+  --accent-border: hsl(var(--accent));
+  --accent-border: hsl(from hsl(var(--accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+
+  --destructive-border: hsl(var(--destructive));
+  --destructive-border: hsl(from hsl(var(--destructive)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+  }
+  
+  /* Mobile optimization for all devices */
+  html {
+    -webkit-text-size-adjust: 100%; /* Prevent text scaling on iOS / older WebKit */
+    -ms-text-size-adjust: 100%; /* IE / older Edge fallback */
+    text-size-adjust: 100%; /* Standard property (not supported in some browsers) */
+    -webkit-tap-highlight-color: transparent; /* Remove tap highlight */
+    touch-action: manipulation; /* Improve touch responsiveness */
+  }
+  
+  /* Ensure smooth scrolling on iOS Safari where supported */
+  @supports (-webkit-overflow-scrolling: touch) {
+    * {
+      -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+    }
+  }
+}
+
+/* Mobile-first responsive padding - works on all devices */
+@media (max-width: 640px) {
+  /* Reduce padding on small screens */
+  .container {
+    @apply px-3;
+  }
+  
+  /* Ensure touch targets are at least 44px (iOS) / 48px (Android) */
+  button, a, input, select, textarea {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* Better spacing for mobile cards */
+  .card {
+    @apply p-3;
+  }
+  
+  /* Optimize modals and dialogs for mobile */
+  [role="dialog"] {
+    @apply max-h-[90vh] overflow-y-auto;
+  }
+}
+
+/* Extra small devices (old Android, small iPhones) */
+@media (max-width: 375px) {
+  .container {
+    @apply px-2;
+  }
+  
+  .card {
+    @apply p-2;
+  }
+  
+  /* Reduce font sizes slightly for very small screens */
+  body {
+    font-size: 14px;
+  }
+}
+
+/**
+ * Using the elevate system.
+ * Automatic contrast adjustment.
+ *
+ * <element className="hover-elevate" />
+ * <element className="active-elevate-2" />
+ *
+ * // Using the tailwind utility when a data attribute is "on"
+ * <element className="toggle-elevate data-[state=on]:toggle-elevated" />
+ * // Or manually controlling the toggle state
+ * <element className="toggle-elevate toggle-elevated" />
+ *
+ * Elevation systems have to handle many states.
+ * - not-hovered, vs. hovered vs. active  (three mutually exclusive states)
+ * - toggled or not
+ * - focused or not (this is not handled with these utilities)
+ *
+ * Even without handling focused or not, this is six possible combinations that
+ * need to be distinguished from eachother visually.
+ */
+@layer utilities {
+
+  /* Hide ugly search cancel button in Chrome until we can style it properly */
+  input[type="search"]::-webkit-search-cancel-button {
+    @apply hidden;
+  }
+
+  /* Placeholder styling for contentEditable div */
+  [contenteditable][data-placeholder]:empty::before {
+    content: attr(data-placeholder);
+    color: hsl(var(--muted-foreground));
+    pointer-events: none;
+  }
+
+  /* .no-default-hover-elevate/no-default-active-elevate is an escape hatch so consumers of
+   * buttons/badges can remove the automatic brightness adjustment on interactions
+   * and program their own. */
+  .no-default-hover-elevate {}
+
+  .no-default-active-elevate {}
+
+
+  /**
+   * Toggleable backgrounds go behind the content. Hoverable/active goes on top.
+   * This way they can stack/compound. Both will overlap the parent's borders!
+   * So borders will be automatically adjusted both on toggle, and hover/active,
+   * and they will be compounded.
+   */
+  .toggle-elevate::before,
+  .toggle-elevate-2::before {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0px;
+    /*border-radius: inherit;   match rounded corners */
+    border-radius: inherit;
+    z-index: -1;
+    /* sits behind content but above backdrop */
+  }
+
+  .toggle-elevate.toggle-elevated::before {
+    background-color: var(--elevate-2);
+  }
+
+  /* If there's a 1px border, adjust the inset so that it covers that parent's border */
+  .border.toggle-elevate::before {
+    inset: -1px;
+  }
+
+  /* Does not work on elements with overflow:hidden! */
+  .hover-elevate:not(.no-default-hover-elevate),
+  .active-elevate:not(.no-default-active-elevate),
+  .hover-elevate-2:not(.no-default-hover-elevate),
+  .active-elevate-2:not(.no-default-active-elevate) {
+    position: relative;
+    z-index: 0;
+  }
+
+  .hover-elevate:not(.no-default-hover-elevate)::after,
+  .active-elevate:not(.no-default-active-elevate)::after,
+  .hover-elevate-2:not(.no-default-hover-elevate)::after,
+  .active-elevate-2:not(.no-default-active-elevate)::after {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0px;
+    /*border-radius: inherit;   match rounded corners */
+    border-radius: inherit;
+    z-index: 999;
+    /* sits in front of content */
+  }
+
+  .hover-elevate:hover:not(.no-default-hover-elevate)::after,
+  .active-elevate:active:not(.no-default-active-elevate)::after {
+    background-color: var(--elevate-1);
+  }
+
+  .hover-elevate-2:hover:not(.no-default-hover-elevate)::after,
+  .active-elevate-2:active:not(.no-default-active-elevate)::after {
+    background-color: var(--elevate-2);
+  }
+
+  /* If there's a 1px border, adjust the inset so that it covers that parent's border */
+  .border.hover-elevate:not(.no-hover-interaction-elevate)::after,
+  .border.active-elevate:not(.no-active-interaction-elevate)::after,
+  .border.hover-elevate-2:not(.no-hover-interaction-elevate)::after,
+  .border.active-elevate-2:not(.no-active-interaction-elevate)::after,
+  .border.hover-elevate:not(.no-hover-interaction-elevate)::after {
+    inset: -1px;
+  }
+}
+
+/* Cinematic Landing Page Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 1s ease-out forwards;
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 1s ease-out forwards;
+}
+
+.animation-delay-200 {
+  animation-delay: 0.2s;
+  opacity: 0;
+}
+
+.animation-delay-400 {
+  animation-delay: 0.4s;
+  opacity: 0;
+}
+
+.animation-delay-600 {
+  animation-delay: 0.6s;
+  opacity: 0;
+}
+
+.animation-delay-800 {
+  animation-delay: 0.8s;
+  opacity: 0;
+}
+
+.animation-delay-1000 {
+  animation-delay: 1s;
+  opacity: 0;
+}
+
+/* Additional Creative Animations */
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes bounceIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+  70% {
+    transform: scale(0.9);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.animate-slide-in-left {
+  animation: slideInLeft 0.6s ease-out forwards;
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 0.6s ease-out forwards;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.5s ease-out forwards;
+}
+
+.animate-bounce-in {
+  animation: bounceIn 0.8s ease-out forwards;
+}
+
+/* Modern gradient hero, matching the Figma prototype's auth screens
+   (#2e63d1 -> #63a0ed). Used behind Login/Signup card headers. */
+.gradient-hero {
+  background: linear-gradient(180deg, #2e63d1 0%, #63a0ed 100%);
+}
+
+.gradient-hero-soft {
+  background: linear-gradient(180deg, #2e63d1 0%, #63a0ed 100%);
+  opacity: 0.08;
+}
+
+/* Staggered delays for album cards and media items */
+.stagger-1 {
+  animation-delay: 0.1s;
+  opacity: 0;
+}
+
+.stagger-2 {
+  animation-delay: 0.2s;
+  opacity: 0;
+}
+
+.stagger-3 {
+  animation-delay: 0.3s;
+  opacity: 0;
+}
+
+.stagger-4 {
+  animation-delay: 0.4s;
+  opacity: 0;
+}
+
+.stagger-5 {
+  animation-delay: 0.5s;
+  opacity: 0;
+}
+
+.stagger-6 {
+  animation-delay: 0.6s;
+  opacity: 0;
+}

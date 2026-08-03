@@ -1,0 +1,13 @@
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer-when-downgrade
+  X-Robots-Tag: index, follow
+
+/robots.txt
+  Content-Type: text/plain
+  X-Robots-Tag: noindex
+
+/sitemap.xml
+  Content-Type: application/xml
+  X-Robots-Tag: noindex
