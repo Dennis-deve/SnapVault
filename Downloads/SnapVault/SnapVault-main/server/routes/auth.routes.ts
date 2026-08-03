@@ -18,6 +18,9 @@ import {
 } from "./shared";
 
 export function registerAuthRoutes(app: Express) {
+  const getAppBaseUrl = (req: Request) =>
+    process.env.CLIENT_URL || process.env.FRONTEND_URL || `${req.protocol}://${req.get("host")}`;
+
   app.post("/api/auth/signup", authLimiter, async (req: Request, res: Response, next: NextFunction) => {
     try {
       const userData = insertUserSchema.parse(req.body);
@@ -43,7 +46,7 @@ export function registerAuthRoutes(app: Express) {
         pin: hashedPin,
       });
 
-      const baseUrl = process.env.CLIENT_URL || `${req.protocol}://${req.get("host")}`;
+      const baseUrl = getAppBaseUrl(req);
       const appUrl = `${baseUrl.replace(/\/$/, "")}/`;
 
       const welcomeEmailResult = await sendWelcomeEmail({
@@ -142,7 +145,7 @@ export function registerAuthRoutes(app: Express) {
         // response. CLIENT_URL matches the pattern already used for
         // password-reset emails; falls back to the request's own host for a
         // same-origin monolithic deployment.
-        const baseUrl = process.env.CLIENT_URL || `${req.protocol}://${req.get("host")}`;
+        const baseUrl = getAppBaseUrl(req);
         res.redirect(`${baseUrl.replace(/\/$/, "")}/dashboard`);
       }
     );
@@ -276,7 +279,7 @@ export function registerAuthRoutes(app: Express) {
 
       await storage.createEmailChangeToken({ userId: req.user!.id, newEmail, token, expiresAt });
 
-      const baseUrl = process.env.CLIENT_URL || `${req.protocol}://${req.get("host")}`;
+      const baseUrl = getAppBaseUrl(req);
       const verifyUrl = `${baseUrl.replace(/\/$/, "")}/verify-email?token=${token}`;
 
       const result = await sendEmailChangeVerification({ to: newEmail, verifyUrl });
@@ -392,7 +395,7 @@ export function registerAuthRoutes(app: Express) {
       });
 
       // Build reset URL - use CLIENT_URL from env or fall back to request host
-      const baseUrl = process.env.CLIENT_URL || `${req.protocol}://${req.get('host')}`;
+      const baseUrl = getAppBaseUrl(req);
       const resetUrl = `${baseUrl}/reset-password?token=${resetToken}`;
 
       console.log('Attempting to send password reset email to:', user.email);

@@ -9,6 +9,9 @@ import { signMediaUrl } from "../mediaUrl";
 import { authLimiter, requireAuth, assertAlbumReadable } from "./shared";
 
 export function registerAlbumRoutes(app: Express) {
+  const getAppBaseUrl = (req: Request) =>
+    process.env.CLIENT_URL || process.env.FRONTEND_URL || `${req.protocol}://${req.get("host")}`;
+
   app.get("/api/albums", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
     try {
       const albums = await storage.getAlbumsByUserId(req.user!.id);
@@ -187,7 +190,7 @@ export function registerAlbumRoutes(app: Express) {
       const shareToken = album.shareToken || crypto.randomBytes(16).toString("hex");
       const updated = await storage.setAlbumSharing(req.params.id, true, shareToken);
 
-      const baseUrl = process.env.CLIENT_URL || `${req.protocol}://${req.get("host")}`;
+      const baseUrl = getAppBaseUrl(req);
       const shareUrl = `${baseUrl.replace(/\/$/, "")}/shared/${updated.shareToken}`;
 
       res.json({ isPublic: true, shareUrl, shareToken: updated.shareToken });

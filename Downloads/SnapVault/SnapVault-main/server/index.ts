@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
+import fs from "fs";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import passport from "passport";
@@ -198,22 +199,32 @@ app.use((req, res, next) => {
     const { setupVite } = await import("./vite.js");
     await setupVite(app, server);
   } else {
-    // In production, serve static files from dist/public
-    // The compiled server is at dist/index.js, so public files are at dist/public
+    // In production, only serve the built client if this process actually
+    // has a frontend bundle. On Render we deploy the API and the static site
+    // separately, so the API service should not depend on dist/public.
     const { fileURLToPath } = await import('url');
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(__filename);
     const distPath = path.join(__dirname, "public");
-    
-    log(`Serving static files from: ${distPath}`);
-    app.use(express.static(distPath));
-    
-    // Catch-all route for SPA
-    app.get("*", (_req, res) => {
-      const indexPath = path.join(distPath, "index.html");
-      log(`Serving index.html from: ${indexPath}`);
-      res.sendFile(indexPath);
-    });
+
+    const hasClientBundle = fs.existsSync(path.join(distPath, "index.html"));
+
+    if (hasClientBundle) {
+      log(`Serving static files from: ${distPath}`);
+      app.use(express.static(distPath));
+
+      // Catch-all route for monolithic deployments that bundle the frontend.
+      app.get("*", (_req, res) => {
+        const indexPath = path.join(distPath, "index.html");
+        log(`Serving index.html from: ${indexPath}`);
+        res.sendFile(indexPath);
+      });
+    } else {
+      log("No client bundle found in dist/public; running in API-only mode.");
+      app.get("/", (_req, res) => {
+        res.json({ message: "SnapVault API is running" });
+      });
+    }
   }
 
   // ALWAYS serve the app on the port specified in the environment variable PORT
