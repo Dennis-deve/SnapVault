@@ -2,6 +2,9 @@
 
 ## Quick Overview
 
+The app code for deployment lives in the GitHub path:
+- https://github.com/Dennis-deve/SnapVault/tree/main/Downloads/SnapVault/SnapVault-main
+
 Your app has:
 - **Frontend**: React + Vite (TypeScript)
 - **Backend**: Express.js + TypeScript
@@ -106,7 +109,8 @@ Your app has:
 1. **Sign up at** [render.com](https://render.com)
 
 2. **Create New Web Service**
-   - Connect your GitHub repository
+   - Connect the GitHub repository that contains the app code under the path `Downloads/SnapVault/SnapVault-main`
+   - Set the root directory to `Downloads/SnapVault/SnapVault-main` in your platform settings
    - Build Command: `npm install && npm run build`
    - Start Command: `npm run preview`
 

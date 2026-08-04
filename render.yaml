@@ -2,6 +2,7 @@ services:
   # Frontend Static Site - SPA with client-side routing
   - type: web
     name: snapvault
+    rootDir: Downloads/SnapVault/SnapVault-main
     buildCommand: npm install && npm run build:client
     staticPublishPath: ./dist/public
     pullRequestPreviewsEnabled: true
@@ -26,7 +27,8 @@ services:
     runtime: node
     region: oregon
     plan: free
-    buildCommand: npm install && npm run build:server
+    rootDir: Downloads/SnapVault/SnapVault-main
+    buildCommand: npm install && npm run build
     startCommand: npm run start
     healthCheckPath: /health
     envVars:

@@ -5,6 +5,7 @@ import connectPgSimple from "connect-pg-simple";
 import passport from "passport";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
+import fs from "fs";
 import path from "path";
 import { registerRoutes } from "./routes";
 import { setupAuth } from "./auth";
@@ -159,8 +160,10 @@ app.use((req, res, next) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
-    res.status(status).json({ message });
-    throw err;
+    if (!res.headersSent) {
+      res.status(status).json({ message });
+    }
+    console.error(err);
   });
 
   // importantly only setup vite in development and after
@@ -171,22 +174,29 @@ app.use((req, res, next) => {
     const { setupVite } = await import("./vite.js");
     await setupVite(app, server);
   } else {
-    // In production, serve static files from dist/public
-    // The compiled server is at dist/index.js, so public files are at dist/public
+    // In production, serve static files from dist/public when the frontend build exists.
+    // The compiled server is at dist/index.js, so public files are at dist/public.
     const { fileURLToPath } = await import('url');
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(__filename);
     const distPath = path.join(__dirname, "public");
-    
-    log(`Serving static files from: ${distPath}`);
-    app.use(express.static(distPath));
-    
-    // Catch-all route for SPA
-    app.get("*", (_req, res) => {
-      const indexPath = path.join(distPath, "index.html");
-      log(`Serving index.html from: ${indexPath}`);
-      res.sendFile(indexPath);
-    });
+    const indexPath = path.join(distPath, "index.html");
+
+    if (fs.existsSync(indexPath)) {
+      log(`Serving static files from: ${distPath}`);
+      app.use(express.static(distPath));
+
+      // Catch-all route for SPA
+      app.get("*", (_req, res) => {
+        log(`Serving index.html from: ${indexPath}`);
+        res.sendFile(indexPath);
+      });
+    } else {
+      log(`Frontend build not found at ${indexPath}; serving API-only responses for non-API requests.`);
+      app.get("*", (_req, res) => {
+        res.status(404).json({ message: "Not found" });
+      });
+    }
   }
 
   // ALWAYS serve the app on the port specified in the environment variable PORT
