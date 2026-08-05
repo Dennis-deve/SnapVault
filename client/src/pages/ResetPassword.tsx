@@ -6,6 +6,7 @@ import { Footer } from "@/components/Footer";
 import { useLocation } from "wouter";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 import logoImage from "@assets/generated_images/SnapVault_inverted_V_logo_lightning_a19e02be.png";
 import { Eye, EyeOff, CheckCircle2 } from "lucide-react";
 
@@ -60,17 +61,10 @@ export default function ResetPassword() {
     setIsLoading(true);
     
     try {
-      const response = await fetch("/api/auth/reset-password", {
+      const data = await apiRequest("/api/auth/reset-password", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, newPassword }),
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to reset password");
-      }
 
       setIsSuccess(true);
       toast({

@@ -6,6 +6,7 @@ import { Footer } from "@/components/Footer";
 import { useLocation } from "wouter";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 import logoImage from "@assets/generated_images/SnapVault_inverted_V_logo_lightning_a19e02be.png";
 import { ArrowLeft } from "lucide-react";
 
@@ -31,17 +32,10 @@ export default function ForgotPassword() {
     setIsLoading(true);
     
     try {
-      const response = await fetch("/api/auth/forgot-password", {
+      const data = await apiRequest("/api/auth/forgot-password", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to send reset email");
-      }
 
       setIsSubmitted(true);
       toast({
