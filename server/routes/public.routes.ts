@@ -60,4 +60,14 @@ export function registerPublicRoutes(app: Express) {
       next(error);
     }
   });
+
+  // Fallback redirect if a user accesses a /shared/:shareToken link directly on the API server URL
+  app.get("/shared/:shareToken", (req: Request, res: Response) => {
+    const frontendUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL;
+    if (frontendUrl) {
+      const target = `${frontendUrl.replace(/\/$/, "")}/shared/${req.params.shareToken}`;
+      return res.redirect(302, target);
+    }
+    res.status(404).send("Shared album link must be accessed on the frontend web app URL.");
+  });
 }
