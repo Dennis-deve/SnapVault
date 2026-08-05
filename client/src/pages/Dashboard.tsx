@@ -338,7 +338,12 @@ export default function Dashboard() {
             </div>
 
             {/* Per-file upload progress */}
-            {uploadFiles.length > 0 && <UploadProgressList files={uploadFiles} />}
+            {uploadFiles.length > 0 && (
+              <UploadProgressList
+                files={uploadFiles}
+                onClear={() => setUploadFiles([])}
+              />
+            )}
 
           {/* Tabbed Albums Section */}
           <Tabs defaultValue="all" className="w-full">
