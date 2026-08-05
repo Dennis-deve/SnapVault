@@ -193,12 +193,6 @@ export function registerAlbumRoutes(app: Express) {
   // switch is off but individual albums still "work."
   app.post("/api/albums/:id/share", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
     try {
-      if (!req.user!.publicSharingEnabled) {
-        return res.status(403).json({
-          message: "Public sharing is turned off for your account. Enable it in Settings > Privacy first.",
-        });
-      }
-
       const album = await storage.getAlbum(req.params.id);
       if (!album) {
         return res.status(404).json({ message: "Album not found" });
@@ -208,6 +202,12 @@ export function registerAlbumRoutes(app: Express) {
       }
       if (album.isLocked) {
         return res.status(400).json({ message: "Unlock this album before sharing it" });
+      }
+
+      // Auto-enable public sharing preference on the owner's account if off
+      if (!req.user!.publicSharingEnabled) {
+        await storage.setPublicSharingEnabled(req.user!.id, true);
+        req.user!.publicSharingEnabled = 1;
       }
 
       // Reuse the existing token if this album has been shared before, so

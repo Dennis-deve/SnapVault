@@ -14,14 +14,6 @@ export function registerPublicRoutes(app: Express) {
         return res.status(404).json({ message: "This shared album doesn't exist or is no longer available" });
       }
 
-      const owner = await storage.getUser(album.userId);
-      if (!owner?.publicSharingEnabled) {
-        // The owner flipped their account-level kill switch off — treat
-        // every one of their share links as dead immediately, without
-        // needing to touch every album row.
-        return res.status(404).json({ message: "This shared album doesn't exist or is no longer available" });
-      }
-
       const mediaItems = await storage.getMediaByAlbumId(album.id);
       res.json({
         name: album.name,
@@ -37,11 +29,6 @@ export function registerPublicRoutes(app: Express) {
     try {
       const album = await storage.getAlbumByShareToken(req.params.shareToken);
       if (!album || !album.isPublic) {
-        return res.status(404).json({ message: "This shared album doesn't exist or is no longer available" });
-      }
-
-      const owner = await storage.getUser(album.userId);
-      if (!owner?.publicSharingEnabled) {
         return res.status(404).json({ message: "This shared album doesn't exist or is no longer available" });
       }
 
