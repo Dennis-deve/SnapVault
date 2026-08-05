@@ -24,8 +24,8 @@ async function compressImage(file: File): Promise<File> {
         let width = img.width;
         let height = img.height;
 
-        // Resize to max 1920px on longest side for mobile
-        const maxSize = 1920;
+        // Preserve Ultra HD / 4K resolution up to 3840px
+        const maxSize = 3840;
         if (width > height && width > maxSize) {
           height = (height * maxSize) / width;
           width = maxSize;
@@ -40,7 +40,7 @@ async function compressImage(file: File): Promise<File> {
         const ctx = canvas.getContext('2d')!;
         ctx.drawImage(img, 0, 0, width, height);
 
-        // Compress to 85% quality
+        // Retain 98% Ultra HD quality
         canvas.toBlob(
           (blob) => {
             if (blob) {
@@ -48,14 +48,13 @@ async function compressImage(file: File): Promise<File> {
                 type: 'image/jpeg',
                 lastModified: Date.now(),
               });
-              console.log(`Compressed ${file.name}: ${(file.size / 1024).toFixed(0)}KB → ${(blob.size / 1024).toFixed(0)}KB`);
               resolve(compressedFile);
             } else {
               resolve(file);
             }
           },
           'image/jpeg',
-          0.85
+          0.98
         );
       };
       img.src = e.target?.result as string;

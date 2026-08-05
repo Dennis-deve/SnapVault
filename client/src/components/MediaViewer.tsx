@@ -83,11 +83,14 @@ export function MediaViewer({
   const containerRef = useRef<HTMLDivElement>(null);
   const filmstripRef = useRef<HTMLDivElement>(null);
 
+  const [controlsVisible, setControlsVisible] = useState(true);
+
   const minSwipeDistance = 50;
 
   useEffect(() => {
     if (open) {
       setIsTransitioning(true);
+      setControlsVisible(true);
       const timer = setTimeout(() => setIsTransitioning(false), 150);
       return () => clearTimeout(timer);
     }
@@ -156,10 +159,10 @@ export function MediaViewer({
           onTouchEnd={onTouchEnd}
         >
           {/* Top overlay bar */}
-          <div className="absolute top-0 left-0 right-0 z-20 bg-black/70 backdrop-blur-sm px-4 py-4 flex items-center gap-3">
+          <div className={`absolute top-0 left-0 right-0 z-20 bg-black/80 backdrop-blur-md px-4 py-4 flex items-center gap-3 transition-opacity duration-300 ${controlsVisible ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
             <button
               onClick={() => onOpenChange(false)}
-              className="h-10 w-10 rounded-full bg-white/20 flex items-center justify-center shrink-0"
+              className="h-10 w-10 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center shrink-0 text-white"
               data-testid="button-close-viewer"
               aria-label="Close viewer"
             >
@@ -232,7 +235,7 @@ export function MediaViewer({
             <Button
               size="icon"
               variant="ghost"
-              className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 z-10 rounded-full h-12 w-12 bg-white/15 hover:bg-white/25 text-white backdrop-blur-sm active:scale-95 transition-all hidden sm:flex"
+              className={`absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 z-10 rounded-full h-12 w-12 bg-white/15 hover:bg-white/25 text-white backdrop-blur-sm active:scale-95 transition-all hidden sm:flex ${controlsVisible ? "opacity-100" : "opacity-0 pointer-events-none"}`}
               onClick={onPrevious}
               data-testid="button-previous"
               title="Previous (← or swipe right)"
@@ -245,7 +248,7 @@ export function MediaViewer({
             <Button
               size="icon"
               variant="ghost"
-              className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 z-10 rounded-full h-12 w-12 bg-white/15 hover:bg-white/25 text-white backdrop-blur-sm active:scale-95 transition-all hidden sm:flex"
+              className={`absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 z-10 rounded-full h-12 w-12 bg-white/15 hover:bg-white/25 text-white backdrop-blur-sm active:scale-95 transition-all hidden sm:flex ${controlsVisible ? "opacity-100" : "opacity-0 pointer-events-none"}`}
               onClick={onNext}
               data-testid="button-next"
               title="Next (→ or swipe left)"
@@ -255,25 +258,28 @@ export function MediaViewer({
             </Button>
           )}
 
-          {/* Media content */}
-          <div className="flex-1 flex items-center justify-center overflow-hidden">
+          {/* Media content - tap anywhere to toggle controls */}
+          <div 
+            className="flex-1 flex items-center justify-center overflow-hidden cursor-pointer select-none"
+            onClick={() => setControlsVisible(!controlsVisible)}
+          >
             {type.startsWith("image/") ? (
               <img
                 src={path}
                 alt={filename}
-                className={`max-w-full max-h-full object-contain transition-opacity duration-150 ${isTransitioning ? "opacity-0" : "opacity-100"}`}
+                className={`max-w-full max-h-full object-contain transition-all duration-200 ${isTransitioning ? "opacity-0 scale-95" : "opacity-100 scale-100"}`}
               />
             ) : type.startsWith("video/") ? (
               <video
                 src={path}
                 controls
-                className={`max-w-full max-h-full object-contain transition-opacity duration-150 ${isTransitioning ? "opacity-0" : "opacity-100"}`}
+                className={`max-w-full max-h-full object-contain transition-all duration-200 ${isTransitioning ? "opacity-0 scale-95" : "opacity-100 scale-100"}`}
               />
             ) : null}
           </div>
 
           {/* Bottom overlay bar: position + progress + filmstrip */}
-          <div className="relative z-20 bg-black/70 backdrop-blur-sm pt-3 pb-[max(env(safe-area-inset-bottom),12px)]">
+          <div className={`relative z-20 bg-black/80 backdrop-blur-md pt-3 pb-[max(env(safe-area-inset-bottom),12px)] transition-opacity duration-300 ${controlsVisible ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
             {hasPosition && (
               <div className="px-5 mb-2">
                 <div className="h-1 rounded-full bg-white/25 overflow-hidden">

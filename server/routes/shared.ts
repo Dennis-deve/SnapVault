@@ -152,15 +152,13 @@ export async function uploadToCloudinary(
       type: 'authenticated',
     };
 
-    // Optimize for mobile: compress images and videos
+    // Optimize for HD: preserve crystal-clear HD quality for images and videos
     if (resourceType === 'image') {
-      uploadOptions.quality = 'auto:good'; // Automatic quality optimization
-      uploadOptions.fetch_format = 'auto'; // Auto format (WebP for supported browsers)
+      uploadOptions.quality = 'auto:best'; // Highest quality HD optimization
+      uploadOptions.fetch_format = 'auto'; // Auto format (WebP/AVIF for supported browsers)
     } else if (resourceType === 'video') {
-      uploadOptions.quality = 'auto'; // Automatic quality
-      uploadOptions.eager = [
-        { width: 640, height: 480, crop: 'limit', format: 'mp4' } // Mobile-optimized version
-      ];
+      uploadOptions.quality = 'auto:best'; // Automatic HD video quality
+      uploadOptions.video_codec = 'auto';
     }
 
     const uploadStream = cloudinary.uploader.upload_stream(

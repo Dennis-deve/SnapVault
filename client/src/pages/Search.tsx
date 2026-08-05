@@ -12,8 +12,9 @@ import { X } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getApiUrl } from "@/lib/api";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import type { Media } from "@shared/schema";
 
 export default function Search() {
@@ -42,16 +43,12 @@ export default function Search() {
     queryKey: ["/api/media/search", debouncedQuery],
     queryFn: async () => {
       if (!debouncedQuery.trim()) return [];
-      const res = await fetch(getApiUrl(`/api/media/search?q=${encodeURIComponent(debouncedQuery)}`));
-      if (!res.ok) throw new Error("Failed to search media");
-      return res.json();
+      return apiRequest(`/api/media/search?q=${encodeURIComponent(debouncedQuery)}`);
     },
     enabled: debouncedQuery.length > 0,
   });
 
-  // Recent searches — only fetched/shown while the search box is empty,
-  // matching the Figma Search screen (recent searches appear before you've
-  // typed anything, then get replaced by live results).
+  // Recent searches
   const { data: recentSearches = [] } = useQuery<{ id: string; query: string }[]>({
     queryKey: ["/api/search/recent"],
     enabled: searchQuery.length === 0,
@@ -59,13 +56,10 @@ export default function Search() {
 
   const logSearchMutation = useMutation({
     mutationFn: async (query: string) => {
-      const res = await fetch(getApiUrl("/api/search/recent"), {
+      return apiRequest("/api/search/recent", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ query }),
       });
-      if (!res.ok) throw new Error("Failed to record search");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/search/recent"] });
@@ -74,11 +68,9 @@ export default function Search() {
 
   const removeRecentSearchMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(getApiUrl(`/api/search/recent/${id}`), {
+      return apiRequest(`/api/search/recent/${id}`, {
         method: "DELETE",
-        credentials: "include",
       });
-      if (!res.ok) throw new Error("Failed to remove search");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/search/recent"] });
@@ -87,36 +79,29 @@ export default function Search() {
 
   const clearRecentSearchesMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(getApiUrl("/api/search/recent"), {
+      return apiRequest("/api/search/recent", {
         method: "DELETE",
-        credentials: "include",
       });
-      if (!res.ok) throw new Error("Failed to clear searches");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/search/recent"] });
     },
   });
 
-  // Log a search once it actually settles (debounced) and is long enough to
-  // be a meaningful term — not on every keystroke.
+  // Log a search once it settles
   useEffect(() => {
     if (debouncedQuery.trim().length >= 2) {
       logSearchMutation.mutate(debouncedQuery.trim());
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedQuery]);
 
   // Favorite toggle mutation
   const toggleFavoriteMutation = useMutation({
     mutationFn: async ({ id, isFavorite }: { id: string; isFavorite: boolean }) => {
-      const res = await fetch(getApiUrl(`/api/media/${id}/favorite`), {
+      return apiRequest(`/api/media/${id}/favorite`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ isFavorite }),
       });
-      if (!res.ok) throw new Error("Failed to update favorite");
     },
     onSuccess: (_data, { id, isFavorite }) => {
       queryClient.setQueryData<Media[]>(["/api/media/search", debouncedQuery], (old = []) =>

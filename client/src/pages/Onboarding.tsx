@@ -4,7 +4,6 @@ import { Footer } from "@/components/Footer";
 import { useLocation } from "wouter";
 import { Play, Cloud, Lock, Zap } from "lucide-react";
 import logoImage from "@assets/generated_images/SnapVault_inverted_V_logo_lightning_a19e02be.png";
-import newLandingImage from "@assets/generated_images/NEWLANDINGIMAGE.png";
 import video1 from "@assets/generated_images/animate_title_snapvault_app_background_video_resolution_1920_1080.mp4";
 import video2 from "@assets/generated_images/animate_title_snapvault_app_background_video_resolution_1920_1080 (1).mp4";
 import video3 from "@assets/generated_images/animate_title_snapvault_app_background_video_resolution_1920_1080 (2).mp4";
@@ -22,26 +21,17 @@ export default function Onboarding() {
 
       {/* Content */}
       <div className="relative z-10 min-h-screen flex items-center justify-center p-4 sm:p-6 lg:p-8">
-        <div className="max-w-4xl w-full space-y-8 lg:space-y-12">
+        <div className="max-w-4xl w-full space-y-6 lg:space-y-8">
           {/* Logo & Brand */}
           <div className="flex items-center justify-center gap-3 animate-fade-in">
             <img 
               src={logoImage} 
               alt="SnapVault" 
-              className="h-10 w-10 sm:h-14 sm:w-14 drop-shadow-2xl" 
+              className="h-12 w-12 sm:h-16 sm:w-16 drop-shadow-2xl" 
             />
             <h1 className="text-3xl sm:text-4xl lg:text-5xl font-display font-bold text-white drop-shadow-2xl">
               SnapVault
             </h1>
-          </div>
-
-          {/* Hero Image - Hidden on small screens where video is visible */}
-          <div className="max-w-xs sm:max-w-sm mx-auto animate-fade-in-up animation-delay-200">
-            <img
-              src={newLandingImage}
-              alt="Cloud storage"
-              className="w-full h-auto drop-shadow-2xl opacity-90 hover:opacity-100 transition-opacity duration-300"
-            />
           </div>
 
           {/* Main Heading */}

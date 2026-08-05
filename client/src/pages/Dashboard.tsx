@@ -315,26 +315,29 @@ export default function Dashboard() {
         </div>
 
         <main className="flex-1 container max-w-7xl mx-auto p-4 md:p-6 lg:p-8 pb-28 lg:pb-8">
-          <div className="space-y-8">
-            {/* Welcome Section */}
-            <div className="space-y-2">
-              <h1 className="text-3xl font-display font-bold">Welcome back!</h1>
-              <p className="text-muted-foreground">Organize and manage your media collections</p>
+          <div className="space-y-4">
+            {/* Compact Top Bar - Visible above the fold without scrolling */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-card/50 p-4 rounded-xl border">
+              <div>
+                <h1 className="text-xl font-display font-bold">Welcome back!</h1>
+                <p className="text-xs text-muted-foreground">Organize and access your cloud media</p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {storageUsage && (
+                  <div className="bg-background border px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2">
+                    <FolderOpen className="h-3.5 w-3.5 text-primary" />
+                    <span>{storageUsage.usedGB.toFixed(1)} GB used</span>
+                  </div>
+                )}
+                <Button onClick={handleUploadClick} size="sm" className="gap-1.5 shadow-sm">
+                  <Upload className="h-3.5 w-3.5" />
+                  Upload Media
+                </Button>
+              </div>
             </div>
 
-            {/* Storage Usage */}
-            {storageUsage && (
-              <StorageCard usedGB={storageUsage.usedGB} totalGB={storageUsage.totalGB} />
-            )}
-
-            {/* Upload Section */}
-            <UploadCard
-              onUploadClick={handleUploadClick}
-              isUploading={isUploading}
-              uploadProgress={uploadProgress}
-            />
-
-            {/* Per-file upload progress, matching the Figma Upload screen */}
+            {/* Per-file upload progress */}
             {uploadFiles.length > 0 && <UploadProgressList files={uploadFiles} />}
 
           {/* Tabbed Albums Section */}
