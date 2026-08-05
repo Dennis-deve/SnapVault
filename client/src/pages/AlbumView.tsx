@@ -16,7 +16,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { getAlbumUnlockToken, clearAlbumUnlockToken } from "@/lib/albumUnlock";
+import { PinDialog } from "@/components/PinDialog";
+import { getAlbumUnlockToken, setAlbumUnlockToken, clearAlbumUnlockToken } from "@/lib/albumUnlock";
 import { uploadFile } from "@/lib/upload";
 import {
   DropdownMenu,
@@ -77,23 +78,46 @@ export default function AlbumView() {
     retry: false,
   });
 
+  const [showPinDialog, setShowPinDialog] = useState(false);
+  const [isPinLoading, setIsPinLoading] = useState(false);
+
   // If the server says this album is locked (our unlock token was missing,
-  // expired, or invalid), send the person back to unlock it from the
-  // dashboard rather than showing a blank/broken page.
+  // expired, or invalid), open the inline PIN prompt directly on this page
+  // rather than kicking the user back to the dashboard.
   useEffect(() => {
     const lockedError = [albumError, mediaError].find(
       (e: any) => e?.message?.startsWith("423")
     );
     if (lockedError && albumId) {
       clearAlbumUnlockToken(albumId);
-      toast({
-        title: "Album is locked",
-        description: "Enter your Magic PIN from the dashboard to view this album.",
-        variant: "destructive",
-      });
-      setLocation("/dashboard");
+      setShowPinDialog(true);
     }
   }, [albumError, mediaError, albumId]);
+
+  const handlePinSubmit = async (pin: string) => {
+    if (!albumId) return;
+    setIsPinLoading(true);
+    try {
+      const { unlockToken } = await apiRequest(`/api/albums/${albumId}/unlock-session`, {
+        method: "POST",
+        body: JSON.stringify({ pin }),
+      });
+      if (unlockToken) {
+        setAlbumUnlockToken(albumId, unlockToken);
+      }
+      setShowPinDialog(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/albums", albumId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/albums", albumId, "media"] });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Invalid Magic PIN",
+        variant: "destructive",
+      });
+    } finally {
+      setIsPinLoading(false);
+    }
+  };
 
   const photoCount = mediaItems.filter((m: any) => m.type?.startsWith("image/")).length;
   const videoCount = mediaItems.filter((m: any) => m.type?.startsWith("video/")).length;
@@ -767,6 +791,20 @@ export default function AlbumView() {
         </div>
       </div>
       
+      <PinDialog
+        open={showPinDialog}
+        onOpenChange={(open) => {
+          setShowPinDialog(open);
+          if (!open && (!album || albumError || mediaError)) {
+            setLocation("/dashboard");
+          }
+        }}
+        onSubmit={handlePinSubmit}
+        title="Enter Magic PIN"
+        description="This album is protected. Enter your 4-digit Magic PIN to view it."
+        isLoading={isPinLoading}
+      />
+
       <Footer className="mt-8" />
       <BottomNav currentPath={`/album/${albumId}`} />
     </div>

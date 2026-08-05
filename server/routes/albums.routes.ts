@@ -45,8 +45,33 @@ export function registerAlbumRoutes(app: Express) {
 
   app.post("/api/albums", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const albumData = insertAlbumSchema.parse(req.body);
-      const album = await storage.createAlbum(albumData, req.user!.id);
+      const { isLocked, pin, ...rest } = req.body;
+      const albumData = insertAlbumSchema.parse(rest);
+
+      let shouldLock = false;
+      if (isLocked) {
+        if (!req.user!.pin && !pin) {
+          return res.status(400).json({ message: "Please set up a Magic PIN first to create a locked album" });
+        }
+        if (pin) {
+          if (!req.user!.pin) {
+            const hashedPin = await bcrypt.hash(pin, 10);
+            await storage.updateUserPin(req.user!.id, hashedPin);
+            req.user!.pin = hashedPin;
+          } else {
+            const isPinValid = await bcrypt.compare(pin, req.user!.pin);
+            if (!isPinValid) {
+              return res.status(401).json({ message: "Invalid Magic PIN" });
+            }
+          }
+        }
+        shouldLock = true;
+      }
+
+      const album = await storage.createAlbum(
+        { ...albumData, isLocked: shouldLock ? 1 : 0 },
+        req.user!.id
+      );
       res.json(album);
     } catch (error: unknown) {
       if (error instanceof z.ZodError) {

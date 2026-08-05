@@ -3,26 +3,39 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Lock } from "lucide-react";
 import { useState } from "react";
 
 interface CreateAlbumModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreateAlbum: (name: string, description?: string) => void;
+  onCreateAlbum: (name: string, description?: string, isLocked?: boolean, pin?: string) => void;
+  hasPin?: boolean;
 }
 
-export function CreateAlbumModal({ open, onOpenChange, onCreateAlbum }: CreateAlbumModalProps) {
+export function CreateAlbumModal({ open, onOpenChange, onCreateAlbum, hasPin = false }: CreateAlbumModalProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [isLocked, setIsLocked] = useState(false);
+  const [pin, setPin] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (name.trim()) {
-      onCreateAlbum(name.trim(), description.trim() || undefined);
+      if (isLocked && pin.length !== 4) return;
+      onCreateAlbum(name.trim(), description.trim() || undefined, isLocked, isLocked ? pin : undefined);
       setName("");
       setDescription("");
+      setIsLocked(false);
+      setPin("");
       onOpenChange(false);
     }
+  };
+
+  const handlePinChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value.replace(/\D/g, "").slice(0, 4);
+    setPin(val);
   };
 
   return (
@@ -56,6 +69,41 @@ export function CreateAlbumModal({ open, onOpenChange, onCreateAlbum }: CreateAl
               data-testid="input-album-description"
             />
           </div>
+
+          <div className="space-y-3 pt-1 border-t">
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="album-lock-toggle"
+                checked={isLocked}
+                onCheckedChange={(checked) => setIsLocked(!!checked)}
+              />
+              <Label htmlFor="album-lock-toggle" className="flex items-center gap-1.5 cursor-pointer font-medium">
+                <Lock className="h-4 w-4 text-primary" />
+                Protect with Magic PIN
+              </Label>
+            </div>
+
+            {isLocked && (
+              <div className="space-y-2 pl-6 animate-fade-in">
+                <Label htmlFor="album-pin" className="text-xs text-muted-foreground">
+                  {hasPin ? "Enter your 4-digit Magic PIN to lock" : "Set your 4-digit Magic PIN"}
+                </Label>
+                <Input
+                  id="album-pin"
+                  type="password"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={4}
+                  placeholder="••••"
+                  value={pin}
+                  onChange={handlePinChange}
+                  className="rounded-xl w-36 tracking-widest text-center text-lg"
+                  required
+                />
+              </div>
+            )}
+          </div>
+
           <div className="flex gap-3 justify-end">
             <Button
               type="button"
@@ -68,7 +116,7 @@ export function CreateAlbumModal({ open, onOpenChange, onCreateAlbum }: CreateAl
             </Button>
             <Button
               type="submit"
-              disabled={!name.trim()}
+              disabled={!name.trim() || (isLocked && pin.length !== 4)}
               className="rounded-2xl"
               data-testid="button-create-album"
             >

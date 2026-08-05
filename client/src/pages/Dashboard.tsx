@@ -61,7 +61,7 @@ export default function Dashboard() {
 
   // Create album mutation
   const createAlbumMutation = useMutation({
-    mutationFn: async (data: { name: string; description?: string }) => {
+    mutationFn: async (data: { name: string; description?: string; isLocked?: boolean; pin?: string }) => {
       return apiRequest("/api/albums", {
         method: "POST",
         body: JSON.stringify(data),
@@ -69,6 +69,7 @@ export default function Dashboard() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/albums"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
     },
   });
 
@@ -172,12 +173,12 @@ export default function Dashboard() {
     input.click();
   };
 
-  const handleCreateAlbum = async (name: string, description?: string) => {
+  const handleCreateAlbum = async (name: string, description?: string, isLocked?: boolean, pin?: string) => {
     try {
-      await createAlbumMutation.mutateAsync({ name, description });
+      await createAlbumMutation.mutateAsync({ name, description, isLocked, pin });
       toast({
         title: "Album created!",
-        description: `"${name}" has been created successfully.`,
+        description: `"${name}" has been created successfully${isLocked ? ' and protected with PIN' : ''}.`,
       });
     } catch (error: any) {
       toast({
@@ -230,12 +231,6 @@ export default function Dashboard() {
     setIsPinLoading(true);
     try {
       if (pinAction.action === 'view') {
-        // SECURITY: previously this branch just verified the PIN generically
-        // (/api/auth/verify-pin) and then navigated — the server never
-        // checked the PIN again when the album's media was actually
-        // fetched, so a locked album's contents were readable by anyone who
-        // could reach the API directly. Now we request a short-lived,
-        // album-scoped unlock token and the media endpoints require it.
         const { unlockToken } = await apiRequest(`/api/albums/${pinAction.albumId}/unlock-session`, {
           method: "POST",
           body: JSON.stringify({ pin }),
@@ -251,17 +246,7 @@ export default function Dashboard() {
         return;
       }
 
-      // Lock/unlock actions still verify generically first, then call the
-      // dedicated lock/unlock endpoint (which re-checks the PIN itself).
-      const verifyResponse = await apiRequest("/api/auth/verify-pin", {
-        method: "POST",
-        body: JSON.stringify({ pin }),
-      });
-
-      if (!verifyResponse.valid) {
-        throw new Error("Invalid PIN");
-      }
-
+      // Direct lock/unlock API call (server verifies PIN)
       const endpoint = `/api/albums/${pinAction.albumId}/${pinAction.action}`;
       await apiRequest(endpoint, {
         method: "POST",
@@ -541,6 +526,7 @@ export default function Dashboard() {
         open={showCreateModal}
         onOpenChange={setShowCreateModal}
         onCreateAlbum={handleCreateAlbum}
+        hasPin={!!user?.pin}
       />
 
       <UploadModal
