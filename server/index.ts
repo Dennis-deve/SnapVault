@@ -224,6 +224,21 @@ app.use((req, res, next) => {
       app.get("/", (_req, res) => {
         res.json({ message: "SnapVault API is running" });
       });
+
+      // Catch-all for non-API web routes requested directly on the API domain:
+      // Redirect to the frontend application URL (FRONTEND_URL)
+      app.get("*", (req, res, next) => {
+        if (req.path.startsWith("/api")) return next();
+        const frontendUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL;
+        if (frontendUrl) {
+          const target = new URL(req.originalUrl, frontendUrl).toString();
+          return res.redirect(302, target);
+        }
+        res.status(404).json({
+          message: "API-only mode. Access the web interface at the frontend URL.",
+          frontendUrl: process.env.FRONTEND_URL || null,
+        });
+      });
     }
   }
 
