@@ -117,6 +117,11 @@ export async function uploadFile(
 
     xhr.open('POST', getApiUrl('/api/upload'));
 
+    const token = localStorage.getItem("auth_token");
+    if (token) {
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    }
+
     xhr.withCredentials = true; // Include cookies (session-based auth)
     xhr.send(formData);
   });

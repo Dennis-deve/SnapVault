@@ -22,17 +22,16 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// SECURITY: the server still issues a JWT on login/signup (useful for
-// non-browser API clients), but the web client intentionally no longer
-// stores it in localStorage or attaches it as a Bearer token. localStorage
-// is readable by any script on the page, so a JWT kept there is stealable
-// by any XSS bug — including ones in third-party dependencies — for the
-// token's full 7-day lifetime. The httpOnly, secure session cookie (already
-// sent automatically via credentials: "include") is the sole auth mechanism
-// for this client, since it can't be read or exfiltrated by JavaScript.
 export async function fetchWithAuth(url: string, options: RequestInit = {}) {
+  const token = localStorage.getItem("auth_token");
+  const headers: Record<string, string> = {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options.headers as Record<string, string> || {}),
+  };
+
   return fetch(url, {
     ...options,
+    headers,
     credentials: "include",
   });
 }
@@ -53,9 +52,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (response.ok) {
         const userData = await response.json();
         setUser(userData);
+      } else if (response.status === 401) {
+        localStorage.removeItem("auth_token");
+        setUser(null);
       }
     } catch (error) {
-      // Not logged in
+      setUser(null);
     } finally {
       setIsLoading(false);
     }
@@ -66,6 +68,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       method: "POST",
       body: JSON.stringify({ email, password }),
     });
+    if (data?.token) {
+      localStorage.setItem("auth_token", data.token);
+    }
     setUser(data);
   }
 
@@ -74,14 +79,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       method: "POST",
       body: JSON.stringify({ email, password, pin: pin || null }),
     });
+    if (data?.token) {
+      localStorage.setItem("auth_token", data.token);
+    }
     setUser(data);
   }
 
   async function logout() {
-    await apiRequest("/api/auth/logout", {
-      method: "POST",
-    });
-    setUser(null);
+    try {
+      await apiRequest("/api/auth/logout", {
+        method: "POST",
+      });
+    } finally {
+      localStorage.removeItem("auth_token");
+      setUser(null);
+    }
   }
 
   return (

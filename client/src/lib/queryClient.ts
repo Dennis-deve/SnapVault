@@ -1,14 +1,16 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { getApiUrl } from "./api";
 
-// SECURITY: no JWT is stored client-side (see lib/auth.tsx for why) — all
-// requests authenticate via the httpOnly session cookie, sent automatically
-// with credentials: "include".
-
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
-    const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
+    let text = "";
+    try {
+      const json = await res.json();
+      text = json.message || JSON.stringify(json);
+    } catch {
+      text = (await res.text()) || res.statusText;
+    }
+    throw new Error(text || `${res.status} Error`);
   }
 }
 
@@ -17,9 +19,11 @@ export async function apiRequest(
   options?: RequestInit,
 ): Promise<any> {
   const fullUrl = getApiUrl(url);
+  const token = localStorage.getItem("auth_token");
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options?.headers as Record<string, string> || {}),
   };
 
@@ -40,8 +44,14 @@ export const getQueryFn: <T>(options: {
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
     const fullUrl = getApiUrl(queryKey.join("/") as string);
+    const token = localStorage.getItem("auth_token");
+
+    const headers: Record<string, string> = {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
 
     const res = await fetch(fullUrl, {
+      headers,
       credentials: "include",
     });
 
