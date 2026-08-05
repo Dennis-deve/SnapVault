@@ -2,78 +2,99 @@ import { getApiUrl } from "./api";
 
 /**
  * Compress and resize image before upload for faster mobile uploads
- * Skips compression for files > 100MB (likely high-quality photos/videos)
+ * Skips compression for files > 100MB
+ * Handles HEIC/HEIF photos from iPhone and includes device fallback timeouts
  */
 async function compressImage(file: File): Promise<File> {
-  // Only compress images, not videos
-  if (!file.type.startsWith('image/')) {
-    return file;
-  }
+  // Check if file is HEIC/HEIF photo from iPhone camera roll
+  const filename = file.name.toLowerCase();
+  const fileType = file.type.toLowerCase();
+  const isHeic = filename.endsWith('.heic') || filename.endsWith('.heif') || fileType.includes('heic') || fileType.includes('heif');
 
-  // Skip if already small (< 500KB) or very large (> 100MB - likely needs full quality)
-  if (file.size < 500 * 1024 || file.size > 100 * 1024 * 1024) {
+  // Skip non-images, HEIC images (browser canvas can't decode HEIC natively), small files or very large files
+  if (!fileType.startsWith('image/') || isHeic || file.size < 500 * 1024 || file.size > 100 * 1024 * 1024) {
     return file;
   }
 
   return new Promise((resolve) => {
+    // 3-second safety fallback timeout for mobile devices (e.g. iPhone 7 Plus)
+    const timeoutTimer = setTimeout(() => {
+      resolve(file);
+    }, 3000);
+
     const reader = new FileReader();
+    
+    reader.onerror = () => {
+      clearTimeout(timeoutTimer);
+      resolve(file);
+    };
+
     reader.onload = (e) => {
       const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
-
-        // Preserve Ultra HD / 4K resolution up to 3840px
-        const maxSize = 3840;
-        if (width > height && width > maxSize) {
-          height = (height * maxSize) / width;
-          width = maxSize;
-        } else if (height > maxSize) {
-          width = (width * maxSize) / height;
-          height = maxSize;
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-
-        const ctx = canvas.getContext('2d')!;
-        ctx.drawImage(img, 0, 0, width, height);
-
-        // Retain 98% Ultra HD quality
-        canvas.toBlob(
-          (blob) => {
-            if (blob) {
-              const compressedFile = new File([blob], file.name, {
-                type: 'image/jpeg',
-                lastModified: Date.now(),
-              });
-              resolve(compressedFile);
-            } else {
-              resolve(file);
-            }
-          },
-          'image/jpeg',
-          0.98
-        );
+      
+      img.onerror = () => {
+        clearTimeout(timeoutTimer);
+        resolve(file);
       };
+
+      img.onload = () => {
+        clearTimeout(timeoutTimer);
+        try {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+
+          // Preserve Ultra HD / 4K resolution up to 3840px
+          const maxSize = 3840;
+          if (width > height && width > maxSize) {
+            height = (height * maxSize) / width;
+            width = maxSize;
+          } else if (height > maxSize) {
+            width = (width * maxSize) / height;
+            height = maxSize;
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return resolve(file);
+
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // Retain 98% Ultra HD quality
+          canvas.toBlob(
+            (blob) => {
+              if (blob) {
+                resolve(new File([blob], file.name, { type: 'image/jpeg', lastModified: Date.now() }));
+              } else {
+                resolve(file);
+              }
+            },
+            'image/jpeg',
+            0.98
+          );
+        } catch {
+          resolve(file);
+        }
+      };
+
       img.src = e.target?.result as string;
     };
+
     reader.readAsDataURL(file);
   });
 }
 
 /**
- * Upload a file with proper authentication (httpOnly session cookie)
- * Works on both desktop and mobile
- * Automatically compresses images for faster upload
+ * Upload a file with proper authentication (Bearer Token & session cookie)
+ * Works reliably on all desktop & mobile browsers (including iPhone 7 Plus)
  */
 export async function uploadFile(
   file: File,
   albumId?: string,
   onProgress?: (percent: number) => void
 ): Promise<any> {
-  // Compress image before upload for faster mobile performance
   const fileToUpload = await compressImage(file);
   
   const formData = new FormData();
@@ -83,7 +104,6 @@ export async function uploadFile(
     formData.append('albumId', albumId);
   }
 
-  // Use XMLHttpRequest for upload progress tracking
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
 
@@ -102,7 +122,7 @@ export async function uploadFile(
           resolve(xhr.responseText);
         }
       } else {
-        reject(new Error(`Upload failed: ${xhr.status} ${xhr.responseText}`));
+        reject(new Error(`Upload failed (${xhr.status}): ${xhr.responseText}`));
       }
     });
 
@@ -121,7 +141,7 @@ export async function uploadFile(
       xhr.setRequestHeader("Authorization", `Bearer ${token}`);
     }
 
-    xhr.withCredentials = true; // Include cookies (session-based auth)
+    xhr.withCredentials = true;
     xhr.send(formData);
   });
 }

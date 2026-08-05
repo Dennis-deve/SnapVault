@@ -19,6 +19,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { PinDialog } from "@/components/PinDialog";
 import { getAlbumUnlockToken, setAlbumUnlockToken, clearAlbumUnlockToken } from "@/lib/albumUnlock";
 import { uploadFile } from "@/lib/upload";
+import { UploadProgressList, type UploadFileState } from "@/components/UploadProgressList";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,6 +36,7 @@ export default function AlbumView() {
   const [viewerOpen, setViewerOpen] = useState(false);
   const [selectedMedia, setSelectedMedia] = useState<any>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadFiles, setUploadFiles] = useState<UploadFileState[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const fileInputRef = useState<HTMLInputElement | null>(null)[0];
 
@@ -368,45 +370,47 @@ export default function AlbumView() {
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
+    const fileArray = Array.from(files);
+    const initialStates: UploadFileState[] = fileArray.map((file, idx) => ({
+      id: `${Date.now()}-${idx}-${file.name}`,
+      name: file.name,
+      sizeLabel: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
+      progress: 0,
+      status: "uploading",
+      isVideo: file.type.startsWith("video/"),
+    }));
+
     setIsUploading(true);
+    setUploadFiles(initialStates);
+
+    const updateFile = (id: string, patch: Partial<UploadFileState>) => {
+      setUploadFiles((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)));
+    };
 
     try {
-      const fileArray = Array.from(files);
-      const totalFiles = fileArray.length;
-      let completed = 0;
-
-      // Upload files sequentially on mobile for better reliability (parallel can overwhelm mobile networks)
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
       const batchSize = isMobile ? 1 : 3;
       
       for (let i = 0; i < fileArray.length; i += batchSize) {
         const batch = fileArray.slice(i, i + batchSize);
-        
-        await Promise.all(
-          batch.map(async (file) => {
-            // Use upload helper with JWT authentication and progress tracking
-            await uploadFile(file, albumId, (percent) => {
-              console.log(`${file.name}: ${percent}%`);
-            });
+        const batchStates = initialStates.slice(i, i + batchSize);
 
-            completed++;
-            
-            // Show progress for multiple files
-            if (totalFiles > 1) {
-              toast({
-                title: `📤 ${completed}/${totalFiles} uploaded`,
-                description: file.name,
-                duration: 2000,
-              });
-            }
+        await Promise.all(
+          batch.map(async (file, batchIdx) => {
+            const fileId = batchStates[batchIdx].id;
+            await uploadFile(file, albumId, (percent) => {
+              updateFile(fileId, { progress: Math.round(percent) });
+            });
+            updateFile(fileId, { progress: 100, status: "done" });
           })
         );
       }
 
       queryClient.invalidateQueries({ queryKey: ["/api/albums", albumId, "media"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/storage/usage"] });
       toast({
         title: "✅ Upload complete!",
-        description: `${totalFiles} file(s) uploaded successfully.`,
+        description: `${fileArray.length} file(s) uploaded successfully.`,
       });
       setIsUploading(false);
     } catch (error: any) {
@@ -640,6 +644,11 @@ export default function AlbumView() {
       )}
 
       <main className="container max-w-7xl mx-auto p-4 md:p-6 lg:p-8 pb-28 lg:pb-8">
+        {uploadFiles.length > 0 && (
+          <div className="mb-6">
+            <UploadProgressList files={uploadFiles} />
+          </div>
+        )}
         {isLoadingMedia ? (
           <div className="text-center py-12">
             <p className="text-muted-foreground">Loading media...</p>
