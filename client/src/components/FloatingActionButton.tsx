@@ -11,7 +11,7 @@ export function FloatingActionButton({ onClick, label = "Add" }: FloatingActionB
     <Button
       onClick={onClick}
       size="icon"
-      className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-xl md:hidden z-40"
+      className="fixed bottom-24 right-6 h-14 w-14 rounded-full shadow-xl md:hidden z-40"
       data-testid="button-fab"
     >
       <Plus className="h-6 w-6" />

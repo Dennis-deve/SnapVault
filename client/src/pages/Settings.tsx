@@ -1,5 +1,6 @@
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
+import { BottomNav } from "@/components/BottomNav";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/components/ThemeProvider";
 import { useAuth } from "@/lib/auth";
 import { apiRequest } from "@/lib/queryClient";
+import { useQuery } from "@tanstack/react-query";
 
 export default function Settings() {
   const [, setLocation] = useLocation();
@@ -21,18 +23,30 @@ export default function Settings() {
   const { theme, setTheme } = useTheme();
   const { user, logout } = useAuth();
 
+  const { data: storageUsage } = useQuery<{ usedGB: number; totalGB: number }>({
+    queryKey: ["/api/storage/usage"],
+    enabled: !!user,
+  });
+
   const [email, setEmail] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [isSendingEmailVerification, setIsSendingEmailVerification] = useState(false);
   const [pin, setPin] = useState("");
   const [publicSharing, setPublicSharing] = useState(false);
+  const [isSavingSharingPref, setIsSavingSharingPref] = useState(false);
   const [hasPin, setHasPin] = useState(false);
   const [isSavingPin, setIsSavingPin] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
 
   useEffect(() => {
     if (user) {
       setEmail(user.email);
       setHasPin(!!user.pin && user.pin !== "****");
       setPin(""); // Don't show hashed PIN
+      setPublicSharing(!!user.publicSharingEnabled);
     }
   }, [user]);
 
@@ -71,11 +85,109 @@ export default function Settings() {
     }
   };
 
-  const handleSave = () => {
-    toast({
-      title: "Settings saved",
-      description: "Your changes have been saved successfully.",
-    });
+  const handleSavePassword = async () => {
+    if (newPassword.length < 8) {
+      toast({
+        title: "Password too short",
+        description: "New password must be at least 8 characters.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (user?.hasPassword && !currentPassword) {
+      toast({
+        title: "Current password required",
+        description: "Enter your current password to change it.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSavingPassword(true);
+    try {
+      await apiRequest("/api/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+
+      setCurrentPassword("");
+      setNewPassword("");
+
+      toast({
+        title: user?.hasPassword ? "Password updated" : "Password set",
+        description: user?.hasPassword
+          ? "Your password has been changed successfully."
+          : "You can now sign in with your email and password, in addition to Google.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update password",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingPassword(false);
+    }
+  };
+
+  const handleSendEmailVerification = async () => {
+    if (!newEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
+      toast({
+        title: "Invalid email",
+        description: "Enter a valid email address.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSendingEmailVerification(true);
+    try {
+      const data = await apiRequest("/api/auth/change-email", {
+        method: "POST",
+        body: JSON.stringify({ newEmail }),
+      });
+
+      toast({
+        title: "Check your inbox",
+        description: data.message || `Verification email sent to ${newEmail}.`,
+      });
+      setNewEmail("");
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to send verification email",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSendingEmailVerification(false);
+    }
+  };
+
+  const handleTogglePublicSharing = async (checked: boolean) => {
+    const previous = publicSharing;
+    setPublicSharing(checked); // optimistic
+    setIsSavingSharingPref(true);
+    try {
+      await apiRequest("/api/auth/sharing-preference", {
+        method: "POST",
+        body: JSON.stringify({ enabled: checked }),
+      });
+      toast({
+        title: checked ? "Public sharing enabled" : "Public sharing disabled",
+        description: checked
+          ? "You can now generate share links from an album's menu."
+          : "All of your album share links are now inactive.",
+      });
+    } catch (error: any) {
+      setPublicSharing(previous); // rollback
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update sharing preference",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingSharingPref(false);
+    }
   };
 
   const handleLogout = async () => {
@@ -128,52 +240,170 @@ export default function Settings() {
         onLogout={handleLogout}
       />
 
-      <div className="sticky top-16 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container max-w-3xl mx-auto px-4 h-16 flex items-center gap-3">
+      {/* Gradient profile header, matching the Figma Settings screen */}
+      <div className="gradient-hero relative pt-6 pb-14 overflow-hidden">
+        <div className="absolute -bottom-10 -left-16 h-40 w-[130%] rounded-[50%] bg-white/10" />
+        <div className="relative container max-w-3xl mx-auto px-4">
           <Button
             variant="ghost"
             size="icon"
             onClick={() => setLocation("/dashboard")}
             data-testid="button-back"
+            aria-label="Back to dashboard"
+            className="text-white hover:bg-white/15 hover:text-white -ml-2 mb-2"
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <h1 className="text-xl font-display font-semibold">Settings</h1>
+          <div className="flex flex-col items-center text-center gap-3 pb-2">
+            <div className="h-20 w-20 rounded-full bg-white/25 flex items-center justify-center">
+              <div className="h-14 w-14 rounded-full bg-white flex items-center justify-center">
+                <span className="text-primary text-2xl font-bold">
+                  {user?.email?.charAt(0).toUpperCase() || "?"}
+                </span>
+              </div>
+            </div>
+            <div>
+              <p className="text-white font-bold text-base">
+                {user?.email?.split("@")[0] || "Your Account"}
+              </p>
+              <p className="text-white/80 text-sm">{user?.email}</p>
+            </div>
+          </div>
         </div>
       </div>
 
-      <main className="container max-w-3xl mx-auto p-4 md:p-6 lg:p-8">
+      <div className="container max-w-3xl mx-auto px-4 -mt-10 relative z-10">
+        {storageUsage && (
+          <div className="bg-card rounded-2xl shadow-md p-4">
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-sm font-semibold">Storage Usage</p>
+              <p className="text-xs text-muted-foreground">
+                {storageUsage.usedGB.toFixed(1)} GB of {storageUsage.totalGB.toFixed(0)} GB
+              </p>
+            </div>
+            <div className="h-2 rounded-full bg-muted overflow-hidden">
+              <div
+                className="h-full rounded-full bg-primary transition-all"
+                style={{ width: `${Math.min(100, (storageUsage.usedGB / storageUsage.totalGB) * 100)}%` }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      <main className="container max-w-3xl mx-auto p-4 md:p-6 lg:p-8 pb-28 lg:pb-8 pt-6">
         <div className="space-y-6">
-          <Card className="p-6">
-            <h2 className="text-lg font-semibold mb-4">Account</h2>
+          <div>
+            <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase px-1 mb-2">
+              Account
+            </p>
+          <Card className="p-5 rounded-[14px] shadow-md border-none">
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="settings-email">Email</Label>
+                <Label htmlFor="settings-email">Current Email</Label>
                 <Input
                   id="settings-email"
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="rounded-2xl"
+                  disabled
+                  className="rounded-2xl bg-muted"
                   data-testid="input-settings-email"
                 />
               </div>
+              {user?.googleLinked && (
+                <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                  Linked to Google Sign-In
+                </p>
+              )}
+              <Separator />
               <div className="space-y-2">
-                <Label htmlFor="settings-password">Change Password</Label>
+                <Label htmlFor="settings-new-email">Change Email</Label>
                 <Input
-                  id="settings-password"
-                  type="password"
-                  placeholder="New password"
+                  id="settings-new-email"
+                  type="email"
+                  placeholder="new@email.com"
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
                   className="rounded-2xl"
-                  data-testid="input-settings-password"
+                  data-testid="input-new-email"
                 />
+                <p className="text-xs text-muted-foreground">
+                  We'll email a confirmation link to the new address — your
+                  account email won't change until you click it.
+                </p>
               </div>
+              <Button
+                onClick={handleSendEmailVerification}
+                disabled={!newEmail || isSendingEmailVerification}
+                variant="outline"
+                className="rounded-2xl"
+                data-testid="button-send-email-verification"
+              >
+                {isSendingEmailVerification ? "Sending..." : "Send Verification Email"}
+              </Button>
             </div>
           </Card>
+          </div>
 
-          <Card className="p-6">
-            <h2 className="text-lg font-semibold mb-4">Magic PIN</h2>
+          <div>
+            <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase px-1 mb-2">
+              Security &amp; PIN
+            </p>
+          <Card className="p-5 rounded-[14px] shadow-md border-none space-y-6">
             <div className="space-y-4">
+              <h3 className="text-sm font-semibold text-muted-foreground">Password</h3>
+              <div className="space-y-4">
+              {user?.hasPassword ? (
+                <div className="space-y-2">
+                  <Label htmlFor="settings-current-password">Current Password</Label>
+                  <Input
+                    id="settings-current-password"
+                    type="password"
+                    placeholder="Enter current password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    className="rounded-2xl"
+                    data-testid="input-current-password"
+                  />
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Your account currently signs in with Google only. Set a
+                  password below to also enable email/password sign-in.
+                </p>
+              )}
+              <div className="space-y-2">
+                <Label htmlFor="settings-new-password">
+                  {user?.hasPassword ? "New Password" : "Password"}
+                </Label>
+                <Input
+                  id="settings-new-password"
+                  type="password"
+                  placeholder="At least 8 characters"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="rounded-2xl"
+                  data-testid="input-new-password"
+                  minLength={8}
+                />
+              </div>
+              <Button
+                onClick={handleSavePassword}
+                disabled={newPassword.length < 8 || isSavingPassword}
+                className="rounded-2xl"
+                data-testid="button-save-password"
+              >
+                {isSavingPassword ? "Saving..." : user?.hasPassword ? "Update Password" : "Set Password"}
+              </Button>
+              </div>
+            </div>
+
+            <Separator />
+
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold text-muted-foreground">Magic PIN</h3>
+              <div className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="settings-pin">4-Digit PIN</Label>
                 {hasPin && (
@@ -207,11 +437,16 @@ export default function Settings() {
               >
                 {isSavingPin ? "Saving..." : hasPin ? "Update PIN" : "Set PIN"}
               </Button>
+              </div>
             </div>
           </Card>
+          </div>
 
-          <Card className="p-6">
-            <h2 className="text-lg font-semibold mb-4">Privacy</h2>
+          <div>
+            <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase px-1 mb-2">
+              Privacy
+            </p>
+          <Card className="p-5 rounded-[14px] shadow-md border-none">
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium">Public Sharing</p>
@@ -221,14 +456,19 @@ export default function Settings() {
               </div>
               <Switch
                 checked={publicSharing}
-                onCheckedChange={setPublicSharing}
+                onCheckedChange={handleTogglePublicSharing}
+                disabled={isSavingSharingPref}
                 data-testid="switch-public-sharing"
               />
             </div>
           </Card>
+          </div>
 
-          <Card className="p-6">
-            <h2 className="text-lg font-semibold mb-4">Appearance</h2>
+          <div>
+            <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase px-1 mb-2">
+              Appearance
+            </p>
+          <Card className="p-5 rounded-[14px] shadow-md border-none">
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium">Dark Mode</p>
@@ -243,24 +483,17 @@ export default function Settings() {
               />
             </div>
           </Card>
-
-          <div className="flex gap-3">
-            <Button
-              onClick={handleSave}
-              className="rounded-2xl flex-1"
-              data-testid="button-save-settings"
-            >
-              Save Changes
-            </Button>
           </div>
 
-          <Separator />
-
-          <div className="pt-4 space-y-3">
+          <div>
+            <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase px-1 mb-2">
+              Danger Zone
+            </p>
+          <Card className="p-2 rounded-[14px] shadow-md border-none">
             <Button
               variant="ghost"
               onClick={handleLogout}
-              className="text-destructive hover:text-destructive w-full"
+              className="text-destructive hover:text-destructive w-full justify-start"
               data-testid="button-logout-settings"
             >
               Log Out
@@ -270,7 +503,7 @@ export default function Settings() {
               <AlertDialogTrigger asChild>
                 <Button
                   variant="ghost"
-                  className="text-destructive hover:text-destructive hover:bg-destructive/10 w-full"
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10 w-full justify-start"
                   data-testid="button-delete-account"
                 >
                   Delete Account
@@ -296,11 +529,13 @@ export default function Settings() {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
+          </Card>
           </div>
         </div>
       </main>
       
       <Footer className="mt-8" />
+      <BottomNav currentPath="/settings" />
     </div>
   );
 }

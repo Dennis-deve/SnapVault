@@ -35,6 +35,7 @@ export function Navbar({ onMenuClick, showMenu, user, onSettingsClick, onLogout,
               size="icon"
               onClick={onMenuClick}
               data-testid="button-menu"
+              aria-label="Open menu"
             >
               <Menu className="h-5 w-5" />
             </Button>
@@ -53,6 +54,7 @@ export function Navbar({ onMenuClick, showMenu, user, onSettingsClick, onLogout,
               onClick={onHomeClick}
               data-testid="button-home"
               title="Home"
+              aria-label="Home"
               className="h-10 w-10 p-2"
             >
               <Home className="h-6 w-6" />
@@ -65,6 +67,7 @@ export function Navbar({ onMenuClick, showMenu, user, onSettingsClick, onLogout,
               onClick={onSearchClick}
               data-testid="button-search"
               title="Search"
+              aria-label="Search"
               className="h-10 w-10 p-2"
             >
               <Search className="h-6 w-6" />
@@ -74,7 +77,7 @@ export function Navbar({ onMenuClick, showMenu, user, onSettingsClick, onLogout,
           {user && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-9 w-9 rounded-full" data-testid="button-user-menu">
+                <Button variant="ghost" className="relative h-9 w-9 rounded-full" data-testid="button-user-menu" aria-label="Account menu">
                   <Avatar className="h-9 w-9">
                     <AvatarImage src={user.avatar} alt={user.email} />
                     <AvatarFallback className="bg-primary text-primary-foreground">

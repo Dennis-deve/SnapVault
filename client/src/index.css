@@ -21,63 +21,65 @@
   --elevate-1: rgba(0,0,0, .03);
   --elevate-2: rgba(0,0,0, .08);
 
-  --background: 220 9% 97%;
+  /* Modern cool-grey app background, matching the Figma prototype (#f5f7fa) */
+  --background: 216 27% 97%;
 
-  --foreground: 220 9% 29%;
+  --foreground: 234 25% 13%;
 
-  --border: 220 6% 88%;
+  --border: 220 14% 90%;
 
-  --card: 220 5% 96%;
+  --card: 0 0% 100%;
 
-  --card-foreground: 220 10% 28%;
+  --card-foreground: 234 25% 13%;
 
-  --card-border: 220 6% 90%;
+  --card-border: 220 14% 93%;
 
-  --sidebar: 220 5% 94%;
+  --sidebar: 0 0% 100%;
 
-  --sidebar-foreground: 220 10% 28%;
+  --sidebar-foreground: 234 25% 13%;
 
-  --sidebar-border: 220 6% 86%;
+  --sidebar-border: 220 14% 92%;
 
-  --sidebar-primary: 207 78% 58%;
+  --sidebar-primary: 217 68% 60%;
 
   --sidebar-primary-foreground: 0 0% 100%;
 
-  --sidebar-accent: 220 8% 86%;
+  --sidebar-accent: 217 68% 95%;
 
-  --sidebar-accent-foreground: 220 10% 28%;
+  --sidebar-accent-foreground: 217 68% 45%;
 
-  --sidebar-ring: 207 78% 58%;
+  --sidebar-ring: 217 68% 60%;
 
-  --popover: 220 6% 92%;
+  --popover: 0 0% 100%;
 
-  --popover-foreground: 220 10% 28%;
+  --popover-foreground: 234 25% 13%;
 
-  --popover-border: 220 7% 84%;
+  --popover-border: 220 14% 92%;
 
-  --primary: 207 78% 58%;
+  /* Figma accent blue #4a90e2 */
+  --primary: 217 68% 60%;
 
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 220 8% 88%;
+  --secondary: 220 20% 95%;
 
-  --secondary-foreground: 220 10% 28%;
+  --secondary-foreground: 234 25% 13%;
 
-  --muted: 220 10% 90%;
+  --muted: 220 20% 95%;
 
-  --muted-foreground: 220 8% 42%;
+  --muted-foreground: 231 8% 56%;
 
-  --accent: 207 18% 92%;
+  --accent: 217 68% 95%;
 
-  --accent-foreground: 220 10% 28%;
+  --accent-foreground: 217 68% 45%;
 
   --destructive: 0 84% 60%;
 
   --destructive-foreground: 0 0% 100%;
 
-  --input: 220 10% 75%;
-  --ring: 207 78% 58%;
-  --chart-1: 207 78% 58%;
+  --input: 220 14% 88%;
+  --ring: 217 68% 60%;
+  --chart-1: 217 68% 60%;
   --chart-2: 158 64% 52%;
   --chart-3: 280 65% 60%;
   --chart-4: 36 77% 55%;
@@ -86,15 +88,15 @@
   --font-sans: Inter, sans-serif;
   --font-serif: Georgia, serif;
   --font-mono: Menlo, monospace;
-  --radius: .5rem; /* 8px */
-  --shadow-2xs: 0px 2px 0px 0px hsl(207 78% 58% / 0.00);
-  --shadow-xs: 0px 2px 0px 0px hsl(207 78% 58% / 0.00);
-  --shadow-sm: 0px 2px 0px 0px hsl(207 78% 58% / 0.00), 0px 1px 2px -1px hsl(207 78% 58% / 0.00);
-  --shadow: 0px 2px 0px 0px hsl(207 78% 58% / 0.00), 0px 1px 2px -1px hsl(207 78% 58% / 0.00);
-  --shadow-md: 0px 2px 0px 0px hsl(207 78% 58% / 0.00), 0px 2px 4px -1px hsl(207 78% 58% / 0.00);
-  --shadow-lg: 0px 2px 0px 0px hsl(207 78% 58% / 0.00), 0px 4px 6px -1px hsl(207 78% 58% / 0.00);
-  --shadow-xl: 0px 2px 0px 0px hsl(207 78% 58% / 0.00), 0px 8px 10px -1px hsl(207 78% 58% / 0.00);
-  --shadow-2xl: 0px 2px 0px 0px hsl(207 78% 58% / 0.00);
+  --radius: .875rem; /* 14px — softer, more modern card corners */
+  --shadow-2xs: 0px 1px 2px 0px rgba(16, 24, 40, 0.04);
+  --shadow-xs: 0px 1px 2px 0px rgba(16, 24, 40, 0.04);
+  --shadow-sm: 0px 2px 8px -2px rgba(16, 24, 40, 0.06);
+  --shadow: 0px 4px 14px 0px rgba(16, 24, 40, 0.07);
+  --shadow-md: 0px 6px 20px -2px rgba(16, 24, 40, 0.08);
+  --shadow-lg: 0px 10px 30px -4px rgba(16, 24, 40, 0.10);
+  --shadow-xl: 0px 16px 40px -8px rgba(16, 24, 40, 0.12);
+  --shadow-2xl: 0px 24px 56px -12px rgba(16, 24, 40, 0.16);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 
@@ -139,77 +141,77 @@
   --elevate-1: rgba(255,255,255, .04);
   --elevate-2: rgba(255,255,255, .09);
 
-  --background: 220 5% 10%;
+  --background: 234 20% 9%;
 
-  --foreground: 220 5% 92%;
+  --foreground: 220 8% 92%;
 
-  --border: 220 5% 20%;
+  --border: 220 12% 20%;
 
-  --card: 220 5% 13%;
+  --card: 234 16% 13%;
 
-  --card-foreground: 220 5% 92%;
+  --card-foreground: 220 8% 92%;
 
-  --card-border: 220 5% 18%;
+  --card-border: 220 12% 19%;
 
-  --sidebar: 220 5% 16%;
+  --sidebar: 234 16% 12%;
 
-  --sidebar-foreground: 220 5% 92%;
+  --sidebar-foreground: 220 8% 92%;
 
-  --sidebar-border: 220 5% 22%;
+  --sidebar-border: 220 12% 22%;
 
-  --sidebar-primary: 207 78% 58%;
+  --sidebar-primary: 217 68% 60%;
 
   --sidebar-primary-foreground: 0 0% 100%;
 
-  --sidebar-accent: 220 8% 22%;
+  --sidebar-accent: 217 30% 20%;
 
-  --sidebar-accent-foreground: 220 5% 92%;
+  --sidebar-accent-foreground: 220 8% 92%;
 
-  --sidebar-ring: 207 78% 58%;
+  --sidebar-ring: 217 68% 60%;
 
-  --popover: 220 5% 19%;
+  --popover: 234 16% 15%;
 
-  --popover-foreground: 220 5% 92%;
+  --popover-foreground: 220 8% 92%;
 
-  --popover-border: 220 5% 25%;
+  --popover-border: 220 12% 24%;
 
-  --primary: 207 78% 58%;
+  --primary: 217 75% 64%;
 
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 220 8% 24%;
+  --secondary: 220 12% 22%;
 
-  --secondary-foreground: 220 5% 92%;
+  --secondary-foreground: 220 8% 92%;
 
-  --muted: 220 10% 22%;
+  --muted: 220 12% 20%;
 
-  --muted-foreground: 220 8% 68%;
+  --muted-foreground: 220 8% 65%;
 
-  --accent: 207 18% 20%;
+  --accent: 217 30% 20%;
 
-  --accent-foreground: 220 5% 92%;
+  --accent-foreground: 220 8% 92%;
 
   --destructive: 0 84% 60%;
 
   --destructive-foreground: 0 0% 100%;
 
   /* Used as the border around inputs. Dark mode: Should be a border that is light enough to have high contrast when rendered on a --card background. More contrast than standard --border */
-  --input: 220 10% 35%;
-  --ring: 207 78% 58%;
-  --chart-1: 207 78% 68%;
+  --input: 220 12% 32%;
+  --ring: 217 75% 64%;
+  --chart-1: 217 75% 68%;
   --chart-2: 158 64% 62%;
   --chart-3: 280 65% 70%;
   --chart-4: 36 77% 65%;
   --chart-5: 340 75% 65%;
 
-  --shadow-2xs: 0px 2px 0px 0px hsl(207 78% 58% / 0.00);
-  --shadow-xs: 0px 2px 0px 0px hsl(207 78% 58% / 0.00);
-  --shadow-sm: 0px 2px 0px 0px hsl(207 78% 58% / 0.00), 0px 1px 2px -1px hsl(207 78% 58% / 0.00);
-  --shadow: 0px 2px 0px 0px hsl(207 78% 58% / 0.00), 0px 1px 2px -1px hsl(207 78% 58% / 0.00);
-  --shadow-md: 0px 2px 0px 0px hsl(207 78% 58% / 0.00), 0px 2px 4px -1px hsl(207 78% 58% / 0.00);
-  --shadow-lg: 0px 2px 0px 0px hsl(207 78% 58% / 0.00), 0px 4px 6px -1px hsl(207 78% 58% / 0.00);
-  --shadow-xl: 0px 2px 0px 0px hsl(207 78% 58% / 0.00), 0px 8px 10px -1px hsl(207 78% 58% / 0.00);
-  --shadow-2xl: 0px 2px 0px 0px hsl(207 78% 58% / 0.00);
+  --shadow-2xs: 0px 1px 2px 0px rgba(0, 0, 0, 0.20);
+  --shadow-xs: 0px 1px 2px 0px rgba(0, 0, 0, 0.20);
+  --shadow-sm: 0px 2px 8px -2px rgba(0, 0, 0, 0.28);
+  --shadow: 0px 4px 14px 0px rgba(0, 0, 0, 0.30);
+  --shadow-md: 0px 6px 20px -2px rgba(0, 0, 0, 0.34);
+  --shadow-lg: 0px 10px 30px -4px rgba(0, 0, 0, 0.38);
+  --shadow-xl: 0px 16px 40px -8px rgba(0, 0, 0, 0.42);
+  --shadow-2xl: 0px 24px 56px -12px rgba(0, 0, 0, 0.48);
 
   /* Automatically computed borders - intensity can be controlled by the user by the --opaque-button-border-intensity setting */
   --sidebar-primary-border: hsl(var(--sidebar-primary));
@@ -531,6 +533,17 @@
 
 .animate-bounce-in {
   animation: bounceIn 0.8s ease-out forwards;
+}
+
+/* Modern gradient hero, matching the Figma prototype's auth screens
+   (#2e63d1 -> #63a0ed). Used behind Login/Signup card headers. */
+.gradient-hero {
+  background: linear-gradient(180deg, #2e63d1 0%, #63a0ed 100%);
+}
+
+.gradient-hero-soft {
+  background: linear-gradient(180deg, #2e63d1 0%, #63a0ed 100%);
+  opacity: 0.08;
 }
 
 /* Staggered delays for album cards and media items */

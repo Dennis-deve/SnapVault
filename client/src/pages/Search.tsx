@@ -5,9 +5,10 @@ import { MediaGrid } from "@/components/MediaGrid";
 import { MediaViewer } from "@/components/MediaViewer";
 import { EmptyState } from "@/components/EmptyState";
 import { Footer } from "@/components/Footer";
-import { Badge } from "@/components/ui/badge";
+import { BottomNav } from "@/components/BottomNav";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useState, useEffect } from "react";
+import { X } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
@@ -48,10 +49,91 @@ export default function Search() {
     enabled: debouncedQuery.length > 0,
   });
 
+  // Recent searches — only fetched/shown while the search box is empty,
+  // matching the Figma Search screen (recent searches appear before you've
+  // typed anything, then get replaced by live results).
+  const { data: recentSearches = [] } = useQuery<{ id: string; query: string }[]>({
+    queryKey: ["/api/search/recent"],
+    enabled: searchQuery.length === 0,
+  });
+
+  const logSearchMutation = useMutation({
+    mutationFn: async (query: string) => {
+      const res = await fetch(getApiUrl("/api/search/recent"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ query }),
+      });
+      if (!res.ok) throw new Error("Failed to record search");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/search/recent"] });
+    },
+  });
+
+  const removeRecentSearchMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(getApiUrl(`/api/search/recent/${id}`), {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to remove search");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/search/recent"] });
+    },
+  });
+
+  const clearRecentSearchesMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(getApiUrl("/api/search/recent"), {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to clear searches");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/search/recent"] });
+    },
+  });
+
+  // Log a search once it actually settles (debounced) and is long enough to
+  // be a meaningful term — not on every keystroke.
+  useEffect(() => {
+    if (debouncedQuery.trim().length >= 2) {
+      logSearchMutation.mutate(debouncedQuery.trim());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedQuery]);
+
+  // Favorite toggle mutation
+  const toggleFavoriteMutation = useMutation({
+    mutationFn: async ({ id, isFavorite }: { id: string; isFavorite: boolean }) => {
+      const res = await fetch(getApiUrl(`/api/media/${id}/favorite`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ isFavorite }),
+      });
+      if (!res.ok) throw new Error("Failed to update favorite");
+    },
+    onSuccess: (_data, { id, isFavorite }) => {
+      queryClient.setQueryData<Media[]>(["/api/media/search", debouncedQuery], (old = []) =>
+        old.map((m) => (m.id === id ? { ...m, isFavorite: isFavorite ? 1 : 0 } : m))
+      );
+      setSelectedMedia((prev: Media | null) => (prev && prev.id === id ? { ...prev, isFavorite: isFavorite ? 1 : 0 } : prev));
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update favorite", variant: "destructive" });
+    },
+  });
+
   // Filter results based on selected filter
   const filteredResults = searchResults.filter((item) => {
     if (selectedFilter === "images") return item.type.startsWith("image/");
     if (selectedFilter === "videos") return item.type.startsWith("video/");
+    if (selectedFilter === "favorites") return !!item.isFavorite;
     return true;
   });
 
@@ -59,6 +141,7 @@ export default function Search() {
     { id: "all", label: "All" },
     { id: "images", label: "Images" },
     { id: "videos", label: "Videos" },
+    { id: "favorites", label: "Favorites" },
   ];
 
   const handleLogout = async () => {
@@ -207,7 +290,7 @@ export default function Search() {
           />
         </div>
 
-        <main className="flex-1 container max-w-7xl mx-auto p-4 md:p-6 lg:p-8">
+        <main className="flex-1 container max-w-7xl mx-auto p-4 md:p-6 lg:p-8 pb-28 lg:pb-8">
         <div className="space-y-6">
           <SearchBar
             value={searchQuery}
@@ -216,25 +299,71 @@ export default function Search() {
           />
 
           <div className="flex gap-2 flex-wrap">
-            {filters.map((filter) => (
-              <Badge
-                key={filter.id}
-                variant={selectedFilter === filter.id ? "default" : "outline"}
-                className="cursor-pointer rounded-2xl px-4 py-2 hover-elevate"
-                onClick={() => setSelectedFilter(filter.id === selectedFilter ? null : filter.id)}
-                data-testid={`filter-${filter.id}`}
-              >
-                {filter.label}
-              </Badge>
-            ))}
+            {filters.map((filter) => {
+              const isActive = selectedFilter === filter.id || (filter.id === "all" && selectedFilter === null);
+              return (
+                <button
+                  key={filter.id}
+                  onClick={() => setSelectedFilter(filter.id === "all" ? null : filter.id)}
+                  className={`h-8 px-4 rounded-full text-[13px] font-semibold transition-colors ${
+                    isActive
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-foreground hover:bg-muted/70"
+                  }`}
+                  data-testid={`filter-${filter.id}`}
+                  aria-pressed={isActive}
+                >
+                  {filter.label}
+                </button>
+              );
+            })}
           </div>
 
           {searchQuery.length === 0 ? (
-            <EmptyState
-              icon="search"
-              title="Start searching"
-              description="Search for photos and videos by name, date, or album."
-            />
+            recentSearches.length > 0 ? (
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-[15px] font-bold">Recent Searches</p>
+                  <button
+                    onClick={() => clearRecentSearchesMutation.mutate()}
+                    className="text-[13px] font-semibold text-primary"
+                    data-testid="button-clear-recent-searches"
+                  >
+                    Clear All
+                  </button>
+                </div>
+                <div className="space-y-1">
+                  {recentSearches.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="flex items-center justify-between gap-2 rounded-xl hover:bg-muted transition-colors"
+                    >
+                      <button
+                        onClick={() => setSearchQuery(entry.query)}
+                        className="flex-1 text-left px-3 py-2.5 text-sm"
+                        data-testid={`recent-search-${entry.id}`}
+                      >
+                        {entry.query}
+                      </button>
+                      <button
+                        onClick={() => removeRecentSearchMutation.mutate(entry.id)}
+                        className="h-8 w-8 shrink-0 flex items-center justify-center text-muted-foreground hover:text-foreground"
+                        aria-label={`Remove "${entry.query}" from recent searches`}
+                        data-testid={`remove-recent-search-${entry.id}`}
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <EmptyState
+                icon="search"
+                title="Start searching"
+                description="Search for photos and videos by name, date, or album."
+              />
+            )
           ) : isLoading ? (
             <div className="flex justify-center items-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -247,8 +376,8 @@ export default function Search() {
             />
           ) : (
             <div>
-              <p className="text-sm text-muted-foreground mb-4">
-                Found {filteredResults.length} result{filteredResults.length !== 1 ? 's' : ''}
+              <p className="text-[15px] font-bold mb-4">
+                Results &nbsp;•&nbsp; {filteredResults.length} item{filteredResults.length !== 1 ? 's' : ''}
               </p>
               <MediaGrid
                 items={filteredResults.map(item => ({
@@ -256,6 +385,7 @@ export default function Search() {
                   filename: item.filename,
                   type: item.type,
                   path: item.path,
+                  isFavorite: item.isFavorite,
                 }))}
                 onItemClick={(item) => {
                   const mediaItem = filteredResults.find(m => m.id === item.id);
@@ -279,16 +409,25 @@ export default function Search() {
           filename={selectedMedia.filename}
           type={selectedMedia.type}
           path={selectedMedia.path}
+          createdAt={selectedMedia.createdAt}
+          isFavorite={!!selectedMedia.isFavorite}
+          onToggleFavorite={() =>
+            toggleFavoriteMutation.mutate({ id: selectedMedia.id, isFavorite: !selectedMedia.isFavorite })
+          }
           onDownload={handleDownload}
           onDelete={handleDeleteMedia}
           onNext={handleNextMedia}
           onPrevious={handlePreviousMedia}
           hasNext={hasNext}
           hasPrevious={hasPrevious}
+          items={filteredResults}
+          currentIndex={currentMediaIndex}
+          onSelectIndex={(i) => setSelectedMedia(filteredResults[i])}
         />
       )}
       
       <Footer className="mt-8" />
+      <BottomNav currentPath="/search" />
     </div>
   );
 }

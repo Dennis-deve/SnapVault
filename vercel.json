@@ -1,16 +1,3 @@
 {
-  "version": 2,
-  "installCommand": "npm install",
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist/public",
-  "framework": null,
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
-    }
-  ],
-  "projectSettings": {
-    "rootDirectory": "Downloads/SnapVault/SnapVault-main"
-  }
+  "version": 2
 }

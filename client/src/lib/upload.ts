@@ -1,10 +1,5 @@
 import { getApiUrl } from "./api";
 
-// Get JWT token from localStorage
-function getToken(): string | null {
-  return localStorage.getItem("auth_token");
-}
-
 /**
  * Compress and resize image before upload for faster mobile uploads
  * Skips compression for files > 100MB (likely high-quality photos/videos)
@@ -70,7 +65,7 @@ async function compressImage(file: File): Promise<File> {
 }
 
 /**
- * Upload a file with proper authentication (JWT + session cookie)
+ * Upload a file with proper authentication (httpOnly session cookie)
  * Works on both desktop and mobile
  * Automatically compresses images for faster upload
  */
@@ -87,13 +82,6 @@ export async function uploadFile(
   
   if (albumId) {
     formData.append('albumId', albumId);
-  }
-
-  const token = getToken();
-  const headers: Record<string, string> = {};
-  
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
   }
 
   // Use XMLHttpRequest for upload progress tracking
@@ -128,13 +116,8 @@ export async function uploadFile(
     });
 
     xhr.open('POST', getApiUrl('/api/upload'));
-    
-    // Add headers
-    Object.entries(headers).forEach(([key, value]) => {
-      xhr.setRequestHeader(key, value);
-    });
 
-    xhr.withCredentials = true; // Include cookies
+    xhr.withCredentials = true; // Include cookies (session-based auth)
     xhr.send(formData);
   });
 }

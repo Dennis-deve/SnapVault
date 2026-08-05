@@ -13,10 +13,12 @@ const Login = lazy(() => import("@/pages/Login"));
 const Signup = lazy(() => import("@/pages/Signup"));
 const ForgotPassword = lazy(() => import("@/pages/ForgotPassword"));
 const ResetPassword = lazy(() => import("@/pages/ResetPassword"));
+const VerifyEmail = lazy(() => import("@/pages/VerifyEmail"));
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const AlbumView = lazy(() => import("@/pages/AlbumView"));
 const Search = lazy(() => import("@/pages/Search"));
 const Settings = lazy(() => import("@/pages/Settings"));
+const PublicAlbum = lazy(() => import("@/pages/PublicAlbum"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 // Loading component for suspense
@@ -37,10 +39,12 @@ function Router() {
         <Route path="/signup" component={Signup} />
         <Route path="/forgot-password" component={ForgotPassword} />
         <Route path="/reset-password" component={ResetPassword} />
+        <Route path="/verify-email" component={VerifyEmail} />
         <Route path="/dashboard" component={Dashboard} />
         <Route path="/album/:id" component={AlbumView} />
         <Route path="/search" component={Search} />
         <Route path="/settings" component={Settings} />
+        <Route path="/shared/:token" component={PublicAlbum} />
         <Route component={NotFound} />
       </Switch>
     </Suspense>

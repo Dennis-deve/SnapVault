@@ -4,16 +4,19 @@ import { MediaGrid } from "@/components/MediaGrid";
 import { MediaViewer } from "@/components/MediaViewer";
 import { EmptyState } from "@/components/EmptyState";
 import { FloatingActionButton } from "@/components/FloatingActionButton";
+import { BottomNav } from "@/components/BottomNav";
 import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
-import { ArrowLeft, MoreVertical, Upload, Lock } from "lucide-react";
-import { useState } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ArrowLeft, MoreVertical, Upload, Lock, Trash2 } from "lucide-react";
+import { useState, useEffect } from "react";
 import { useLocation, useRoute } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { getAlbumUnlockToken, clearAlbumUnlockToken } from "@/lib/albumUnlock";
 import { uploadFile } from "@/lib/upload";
 import {
   DropdownMenu,
@@ -34,19 +37,74 @@ export default function AlbumView() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const fileInputRef = useState<HTMLInputElement | null>(null)[0];
 
+  const [mediaFilter, setMediaFilter] = useState<"all" | "photos" | "videos" | "favorites">("all");
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [moveDialogOpen, setMoveDialogOpen] = useState(false);
   const albumId = params?.id;
 
+  // Other albums, for the "Move to Album" batch action.
+  const { data: allAlbums = [] } = useQuery<any[]>({
+    queryKey: ["/api/albums"],
+    enabled: selectMode,
+  });
+  const otherAlbums = allAlbums.filter((a: any) => a.id !== albumId);
+
+  // SECURITY: locked albums now require the short-lived unlock token
+  // obtained from Dashboard's PIN flow (POST /api/albums/:id/unlock-session)
+  // — the server rejects these requests with 423 if it's missing/invalid,
+  // even though the caller is authenticated as the album's owner. This
+  // closes the gap where a locked album's contents were readable by anyone
+  // who could reach this endpoint without ever supplying the PIN.
+  const unlockToken = albumId ? getAlbumUnlockToken(albumId) : null;
+  const unlockHeaders: Record<string, string> = unlockToken
+    ? { "x-album-unlock-token": unlockToken }
+    : {};
+
   // Fetch album details
-  const { data: album } = useQuery<any>({
+  const { data: album, error: albumError } = useQuery<any>({
     queryKey: ["/api/albums", albumId],
+    queryFn: () => apiRequest(`/api/albums/${albumId}`, { headers: unlockHeaders }),
     enabled: !!albumId,
+    retry: false,
   });
 
-  // Fetch media for this album (even if locked, user authenticated with PIN)
-  const { data: mediaItems = [], isLoading: isLoadingMedia } = useQuery<any[]>({
+  // Fetch media for this album (requires the unlock token above if locked)
+  const { data: mediaItems = [], isLoading: isLoadingMedia, error: mediaError } = useQuery<any[]>({
     queryKey: ["/api/albums", albumId, "media"],
+    queryFn: () => apiRequest(`/api/albums/${albumId}/media`, { headers: unlockHeaders }),
     enabled: !!albumId,
+    retry: false,
   });
+
+  // If the server says this album is locked (our unlock token was missing,
+  // expired, or invalid), send the person back to unlock it from the
+  // dashboard rather than showing a blank/broken page.
+  useEffect(() => {
+    const lockedError = [albumError, mediaError].find(
+      (e: any) => e?.message?.startsWith("423")
+    );
+    if (lockedError && albumId) {
+      clearAlbumUnlockToken(albumId);
+      toast({
+        title: "Album is locked",
+        description: "Enter your Magic PIN from the dashboard to view this album.",
+        variant: "destructive",
+      });
+      setLocation("/dashboard");
+    }
+  }, [albumError, mediaError, albumId]);
+
+  const photoCount = mediaItems.filter((m: any) => m.type?.startsWith("image/")).length;
+  const videoCount = mediaItems.filter((m: any) => m.type?.startsWith("video/")).length;
+  const filteredMedia =
+    mediaFilter === "all"
+      ? mediaItems
+      : mediaFilter === "favorites"
+      ? mediaItems.filter((m: any) => m.isFavorite)
+      : mediaItems.filter((m: any) =>
+          mediaFilter === "photos" ? m.type?.startsWith("image/") : m.type?.startsWith("video/")
+        );
 
   // Delete album mutation
   const deleteAlbumMutation = useMutation({
@@ -77,30 +135,167 @@ export default function AlbumView() {
     },
   });
 
+  // Favorite toggle mutation — optimistic so the heart responds instantly.
+  const toggleFavoriteMutation = useMutation({
+    mutationFn: async ({ id, isFavorite }: { id: string; isFavorite: boolean }) => {
+      return apiRequest(`/api/media/${id}/favorite`, {
+        method: "PATCH",
+        body: JSON.stringify({ isFavorite }),
+      });
+    },
+    onMutate: async ({ id, isFavorite }) => {
+      const queryKey = ["/api/albums", albumId, "media"];
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<any[]>(queryKey);
+      queryClient.setQueryData<any[]>(queryKey, (old = []) =>
+        old.map((m) => (m.id === id ? { ...m, isFavorite } : m))
+      );
+      if (selectedMedia?.id === id) {
+        setSelectedMedia((prev: any) => ({ ...prev, isFavorite }));
+      }
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["/api/albums", albumId, "media"], context.previous);
+      }
+      toast({ title: "Error", description: "Failed to update favorite", variant: "destructive" });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/albums", albumId, "media"] });
+    },
+  });
+
+  // Batch delete mutation — backs the "Select" multi-select mode.
+  const batchDeleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      return apiRequest("/api/media/batch-delete", {
+        method: "POST",
+        body: JSON.stringify({ ids }),
+      });
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/albums", albumId, "media"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/storage/usage"] });
+      setSelectMode(false);
+      setSelectedIds(new Set());
+      toast({
+        title: "Deleted",
+        description: `${data.deletedCount} item${data.deletedCount === 1 ? "" : "s"} deleted.`,
+      });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete selected items", variant: "destructive" });
+    },
+  });
+
+  // Batch move mutation — the other half of "Select" mode.
+  const batchMoveMutation = useMutation({
+    mutationFn: async ({ ids, targetAlbumId }: { ids: string[]; targetAlbumId: string }) => {
+      return apiRequest("/api/media/batch-move", {
+        method: "POST",
+        body: JSON.stringify({ ids, albumId: targetAlbumId }),
+      });
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/albums", albumId, "media"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/albums"] });
+      setSelectMode(false);
+      setSelectedIds(new Set());
+      setMoveDialogOpen(false);
+      toast({
+        title: "Moved",
+        description: `${data.movedCount} item${data.movedCount === 1 ? "" : "s"} moved.`,
+      });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to move selected items", variant: "destructive" });
+    },
+  });
+
+  const toggleItemSelected = (item: any) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(item.id)) next.delete(item.id);
+      else next.add(item.id);
+      return next;
+    });
+  };
+
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  };
+
+  // Album sharing
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [shareUrl, setShareUrl] = useState("");
+
+  const shareMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest(`/api/albums/${albumId}/share`, { method: "POST" });
+    },
+    onSuccess: (data: any) => {
+      setShareUrl(data.shareUrl);
+      setShareDialogOpen(true);
+      queryClient.invalidateQueries({ queryKey: ["/api/albums", albumId] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Couldn't share album",
+        description: error.message || "Failed to enable sharing",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const unshareMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest(`/api/albums/${albumId}/unshare`, { method: "POST" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/albums", albumId] });
+      toast({ title: "Sharing stopped", description: "The share link no longer works." });
+    },
+  });
+
+  const handleShareClick = () => {
+    if (album?.isPublic && album?.shareToken) {
+      const baseUrl = window.location.origin;
+      setShareUrl(`${baseUrl}/shared/${album.shareToken}`);
+      setShareDialogOpen(true);
+    } else {
+      shareMutation.mutate();
+    }
+  };
+
   const handleMediaClick = (item: any) => {
     setSelectedMedia(item);
     setViewerOpen(true);
   };
 
+  // Navigate within filteredMedia (not the full mediaItems) so prev/next in
+  // the viewer stays consistent with whatever All/Photos/Videos filter is
+  // currently active.
   const handleNextMedia = () => {
-    const currentIndex = mediaItems.findIndex((item: any) => item.id === selectedMedia?.id);
-    if (currentIndex < mediaItems.length - 1) {
-      setSelectedMedia(mediaItems[currentIndex + 1]);
+    const currentIndex = filteredMedia.findIndex((item: any) => item.id === selectedMedia?.id);
+    if (currentIndex < filteredMedia.length - 1) {
+      setSelectedMedia(filteredMedia[currentIndex + 1]);
     }
   };
 
   const handlePreviousMedia = () => {
-    const currentIndex = mediaItems.findIndex((item: any) => item.id === selectedMedia?.id);
+    const currentIndex = filteredMedia.findIndex((item: any) => item.id === selectedMedia?.id);
     if (currentIndex > 0) {
-      setSelectedMedia(mediaItems[currentIndex - 1]);
+      setSelectedMedia(filteredMedia[currentIndex - 1]);
     }
   };
 
   const currentMediaIndex = selectedMedia 
-    ? mediaItems.findIndex((item: any) => item.id === selectedMedia.id)
+    ? filteredMedia.findIndex((item: any) => item.id === selectedMedia.id)
     : -1;
   
-  const hasNext = currentMediaIndex >= 0 && currentMediaIndex < mediaItems.length - 1;
+  const hasNext = currentMediaIndex >= 0 && currentMediaIndex < filteredMedia.length - 1;
   const hasPrevious = currentMediaIndex > 0;
 
   const handleDownload = async () => {
@@ -226,6 +421,7 @@ export default function AlbumView() {
   const handleDeleteAlbum = async () => {
     try {
       await deleteAlbumMutation.mutateAsync();
+      if (albumId) clearAlbumUnlockToken(albumId);
       toast({
         title: "Album deleted",
         description: `"${album?.name}" has been deleted.`,
@@ -299,6 +495,7 @@ export default function AlbumView() {
               size="icon"
               onClick={() => setLocation("/dashboard")}
               data-testid="button-back"
+              aria-label="Back to dashboard"
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
@@ -307,7 +504,36 @@ export default function AlbumView() {
             </h1>
           </div>
 
+          {mediaItems.length > 0 && (
+            <p className="hidden sm:block text-sm text-muted-foreground shrink-0">
+              {photoCount} photo{photoCount === 1 ? "" : "s"}
+              {videoCount > 0 && ` • ${videoCount} video${videoCount === 1 ? "" : "s"}`}
+            </p>
+          )}
+
           <div className="flex items-center gap-2">
+            {mediaItems.length > 0 && !selectMode && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSelectMode(true)}
+                className="rounded-2xl"
+                data-testid="button-select-mode"
+              >
+                Select
+              </Button>
+            )}
+            {selectMode && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={exitSelectMode}
+                className="rounded-2xl"
+                data-testid="button-cancel-select"
+              >
+                Cancel
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -321,12 +547,23 @@ export default function AlbumView() {
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" data-testid="button-album-menu">
+                <Button variant="ghost" size="icon" data-testid="button-album-menu" aria-label="Album options">
                   <MoreVertical className="h-5 w-5" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem data-testid="button-edit-album">Edit Album</DropdownMenuItem>
+                <DropdownMenuItem onClick={handleShareClick} data-testid="button-share-album">
+                  {album?.isPublic ? "Copy Share Link" : "Share Album"}
+                </DropdownMenuItem>
+                {album?.isPublic && (
+                  <DropdownMenuItem
+                    onClick={() => unshareMutation.mutate()}
+                    data-testid="button-stop-sharing"
+                  >
+                    Stop Sharing
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
                   className="text-destructive"
                   onClick={handleDeleteAlbum}
@@ -340,7 +577,45 @@ export default function AlbumView() {
         </div>
       </div>
 
-      <main className="container max-w-7xl mx-auto p-4 md:p-6 lg:p-8">
+      {/* Filter pills, matching the Figma Album Detail screen. Favorites is
+          now wired to a real backend field (media.isFavorite) rather than
+          being decorative. */}
+      {mediaItems.length > 0 && !selectMode && (
+        <div className="container max-w-7xl mx-auto px-4 pt-4 flex gap-2">
+          {([
+            { key: "all", label: "All" },
+            { key: "photos", label: "Photos" },
+            { key: "videos", label: "Videos" },
+            { key: "favorites", label: "Favorites" },
+          ] as const).map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setMediaFilter(tab.key)}
+              className={`h-8 px-4 rounded-full text-[13px] font-semibold transition-colors ${
+                mediaFilter === tab.key
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-foreground hover:bg-muted/70"
+              }`}
+              data-testid={`filter-${tab.key}`}
+              aria-pressed={mediaFilter === tab.key}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Selection count bar, shown instead of the filter pills while
+          Select mode is active. */}
+      {selectMode && (
+        <div className="container max-w-7xl mx-auto px-4 pt-4">
+          <p className="text-sm text-muted-foreground">
+            {selectedIds.size} selected
+          </p>
+        </div>
+      )}
+
+      <main className="container max-w-7xl mx-auto p-4 md:p-6 lg:p-8 pb-28 lg:pb-8">
         {isLoadingMedia ? (
           <div className="text-center py-12">
             <p className="text-muted-foreground">Loading media...</p>
@@ -353,10 +628,116 @@ export default function AlbumView() {
             actionLabel="Upload Media"
             onAction={handleUploadClick}
           />
+        ) : filteredMedia.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-muted-foreground">
+              No {mediaFilter} in this album yet.
+            </p>
+          </div>
         ) : (
-          <MediaGrid items={mediaItems} onItemClick={handleMediaClick} />
+          <MediaGrid
+            items={filteredMedia}
+            onItemClick={handleMediaClick}
+            selectable={selectMode}
+            selectedIds={selectedIds}
+            onToggleSelect={toggleItemSelected}
+          />
         )}
       </main>
+
+          {/* Bottom batch-action bar, shown while items are selected in
+              Select mode — matches the Figma multi-select affordance. */}
+          {selectMode && selectedIds.size > 0 && (
+            <div className="fixed bottom-0 left-0 right-0 z-40 bg-card border-t shadow-[0_-2px_16px_0_rgba(16,24,40,0.08)] lg:pl-64">
+              <div className="container max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold">{selectedIds.size} selected</p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-2xl"
+                    onClick={() => setMoveDialogOpen(true)}
+                    disabled={otherAlbums.length === 0}
+                    data-testid="button-batch-move"
+                  >
+                    Move to Album
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="rounded-2xl"
+                    onClick={() => batchDeleteMutation.mutate(Array.from(selectedIds))}
+                    disabled={batchDeleteMutation.isPending}
+                    data-testid="button-batch-delete"
+                  >
+                    <Trash2 className="h-4 w-4 mr-1.5" />
+                    Delete
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Share link dialog */}
+          <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
+            <DialogContent className="max-w-sm">
+              <DialogHeader>
+                <DialogTitle>Share "{album?.name}"</DialogTitle>
+              </DialogHeader>
+              <p className="text-sm text-muted-foreground">
+                Anyone with this link can view this album's photos and videos — no SnapVault account required.
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  readOnly
+                  value={shareUrl}
+                  onFocus={(e) => e.currentTarget.select()}
+                  className="flex-1 rounded-xl border bg-muted px-3 py-2 text-sm"
+                  data-testid="input-share-url"
+                />
+                <Button
+                  size="sm"
+                  className="rounded-xl shrink-0"
+                  onClick={() => {
+                    navigator.clipboard.writeText(shareUrl);
+                    toast({ title: "Link copied" });
+                  }}
+                  data-testid="button-copy-share-link"
+                >
+                  Copy
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Move-to-album dialog for the batch action above */}
+          <Dialog open={moveDialogOpen} onOpenChange={setMoveDialogOpen}>
+            <DialogContent className="max-w-sm">
+              <DialogHeader>
+                <DialogTitle>Move {selectedIds.size} item{selectedIds.size === 1 ? "" : "s"} to…</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-1 max-h-72 overflow-y-auto">
+                {otherAlbums.map((a: any) => (
+                  <button
+                    key={a.id}
+                    onClick={() =>
+                      batchMoveMutation.mutate({ ids: Array.from(selectedIds), targetAlbumId: a.id })
+                    }
+                    disabled={batchMoveMutation.isPending}
+                    className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-muted transition-colors text-sm font-medium"
+                    data-testid={`move-target-${a.id}`}
+                  >
+                    {a.name}
+                  </button>
+                ))}
+                {otherAlbums.length === 0 && (
+                  <p className="text-sm text-muted-foreground px-3 py-2">
+                    Create another album first to move items into it.
+                  </p>
+                )}
+              </div>
+            </DialogContent>
+          </Dialog>
 
           <FloatingActionButton onClick={handleUploadClick} label="Upload Media" />
 
@@ -367,18 +748,27 @@ export default function AlbumView() {
               filename={selectedMedia.filename}
               type={selectedMedia.type}
               path={selectedMedia.path || ""}
+              createdAt={selectedMedia.createdAt}
+              isFavorite={!!selectedMedia.isFavorite}
+              onToggleFavorite={() =>
+                toggleFavoriteMutation.mutate({ id: selectedMedia.id, isFavorite: !selectedMedia.isFavorite })
+              }
               onDownload={handleDownload}
               onDelete={handleDeleteMedia}
               onNext={handleNextMedia}
               onPrevious={handlePreviousMedia}
               hasNext={hasNext}
               hasPrevious={hasPrevious}
+              items={filteredMedia}
+              currentIndex={currentMediaIndex}
+              onSelectIndex={(i) => setSelectedMedia(filteredMedia[i])}
             />
           )}
         </div>
       </div>
       
       <Footer className="mt-8" />
+      <BottomNav currentPath={`/album/${albumId}`} />
     </div>
   );
 }

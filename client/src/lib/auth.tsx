@@ -7,6 +7,9 @@ interface User {
   id: string;
   email: string;
   pin: string | null;
+  hasPassword?: boolean;
+  googleLinked?: boolean;
+  publicSharingEnabled?: boolean;
 }
 
 interface AuthContextType {
@@ -19,34 +22,18 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Token management functions
-function getToken(): string | null {
-  return localStorage.getItem("auth_token");
-}
-
-function setToken(token: string) {
-  localStorage.setItem("auth_token", token);
-}
-
-function removeToken() {
-  localStorage.removeItem("auth_token");
-}
-
-// Helper to make authenticated requests with JWT
+// SECURITY: the server still issues a JWT on login/signup (useful for
+// non-browser API clients), but the web client intentionally no longer
+// stores it in localStorage or attaches it as a Bearer token. localStorage
+// is readable by any script on the page, so a JWT kept there is stealable
+// by any XSS bug — including ones in third-party dependencies — for the
+// token's full 7-day lifetime. The httpOnly, secure session cookie (already
+// sent automatically via credentials: "include") is the sole auth mechanism
+// for this client, since it can't be read or exfiltrated by JavaScript.
 export async function fetchWithAuth(url: string, options: RequestInit = {}) {
-  const token = getToken();
-  const headers: Record<string, string> = {
-    ...(options.headers as Record<string, string>),
-  };
-  
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-  
   return fetch(url, {
     ...options,
-    headers,
-    credentials: "include", // Still include for backward compatibility
+    credentials: "include",
   });
 }
 
@@ -66,13 +53,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (response.ok) {
         const userData = await response.json();
         setUser(userData);
-      } else {
-        // Token might be invalid, clear it
-        removeToken();
       }
     } catch (error) {
       // Not logged in
-      removeToken();
     } finally {
       setIsLoading(false);
     }
@@ -83,12 +66,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       method: "POST",
       body: JSON.stringify({ email, password }),
     });
-    
-    // Store JWT token from response
-    if (data.token) {
-      setToken(data.token);
-    }
-    
     setUser(data);
   }
 
@@ -97,12 +74,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       method: "POST",
       body: JSON.stringify({ email, password, pin: pin || null }),
     });
-    
-    // Store JWT token from response
-    if (data.token) {
-      setToken(data.token);
-    }
-    
     setUser(data);
   }
 
@@ -110,7 +81,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await apiRequest("/api/auth/logout", {
       method: "POST",
     });
-    removeToken();
     setUser(null);
   }
 

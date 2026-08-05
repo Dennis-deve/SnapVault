@@ -1,8 +1,8 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card } from "@/components/ui/card";
 import { Footer } from "@/components/Footer";
+import { GoogleAuthButton } from "@/components/GoogleAuthButton";
 import { useLocation } from "wouter";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -22,6 +22,15 @@ export default function Signup() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    if (password.length < 8) {
+      toast({
+        title: "Error",
+        description: "Password must be at least 8 characters",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (password !== confirmPassword) {
       toast({
         title: "Error",
@@ -62,20 +71,22 @@ export default function Signup() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-background to-primary/5 flex flex-col">
-      <div className="flex-1 flex items-center justify-center p-4">
-        <Card className="w-full max-w-md p-8 rounded-2xl animate-fade-in-up">
-          <div className="flex items-center justify-center gap-2 mb-8 animate-fade-in animation-delay-200">
-            <img src={logoImage} alt="SnapVault" className="h-10 w-10" />
-            <h1 className="text-2xl font-display font-bold text-primary">SnapVault</h1>
+    <div className="min-h-screen bg-background flex flex-col">
+      <div className="flex-1 flex items-center justify-center p-4 sm:p-6">
+        <div className="w-full max-w-md rounded-[28px] overflow-hidden shadow-xl bg-card animate-fade-in-up my-8">
+          {/* Gradient hero header, matching the Figma prototype */}
+          <div className="gradient-hero relative px-8 pt-10 pb-12 text-center overflow-hidden">
+            <div className="absolute -bottom-10 -left-16 h-40 w-[130%] rounded-[50%] bg-white/10" />
+            <div className="relative flex items-center justify-center gap-2 mb-4">
+              <img src={logoImage} alt="SnapVault" className="h-9 w-9" />
+              <span className="text-lg font-display font-bold text-white">SnapVault</span>
+            </div>
+            <h2 className="relative text-2xl font-display font-bold text-white">Create Account</h2>
+            <p className="relative text-sm text-white/85 mt-1">Start backing up today</p>
           </div>
 
-          <h2 className="text-3xl font-display font-semibold text-center mb-2 animate-fade-in animation-delay-400">Create account</h2>
-          <p className="text-muted-foreground text-center mb-8 animate-fade-in animation-delay-400">
-            Get started with SnapVault today
-          </p>
-
-          <form onSubmit={handleSubmit} className="space-y-6 animate-fade-in animation-delay-600">
+          <div className="px-6 sm:px-8 pt-8 pb-8">
+          <form onSubmit={handleSubmit} className="space-y-5">
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
             <Input
@@ -84,7 +95,7 @@ export default function Signup() {
               placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="rounded-2xl"
+              className="rounded-2xl h-12"
               data-testid="input-email"
               required
             />
@@ -98,10 +109,15 @@ export default function Signup() {
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="rounded-2xl"
+              className="rounded-2xl h-12"
               data-testid="input-password"
+              minLength={8}
+              aria-describedby="password-hint"
               required
             />
+            <p id="password-hint" className="text-xs text-muted-foreground">
+              At least 8 characters.
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -112,7 +128,7 @@ export default function Signup() {
               placeholder="••••••••"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              className="rounded-2xl"
+              className="rounded-2xl h-12"
               data-testid="input-confirm-password"
               required
             />
@@ -122,30 +138,44 @@ export default function Signup() {
             <Label htmlFor="pin">Magic PIN (Optional)</Label>
             <Input
               id="pin"
-              type="number"
+              type="text"
               inputMode="numeric"
+              autoComplete="off"
               placeholder="1234"
               value={pin}
-              onChange={(e) => setPin(e.target.value.slice(0, 4))}
-              className="rounded-2xl"
+              // NOTE: type="number" was previously used here, which silently
+              // strips a leading zero as the user types (e.g. "0192" becomes
+              // "192"), so a PIN starting with 0 wouldn't match what the user
+              // thinks they set. Filtering a text input to digits-only, as
+              // PinDialog already does, avoids that bug.
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+              className="rounded-2xl h-12"
               data-testid="input-pin"
               maxLength={4}
+              aria-describedby="pin-hint"
             />
-            <p className="text-xs text-muted-foreground">
+            <p id="pin-hint" className="text-xs text-muted-foreground">
               Set a secure 4-digit PIN to lock/unlock albums. Can be updated in Settings.
             </p>
           </div>
 
           <Button
             type="submit"
-            className="w-full rounded-2xl"
-            size="lg"
+            className="w-full rounded-2xl h-12 text-base font-semibold"
             disabled={isLoading}
             data-testid="button-signup-submit"
           >
-            {isLoading ? "Creating account..." : "Sign Up"}
+            {isLoading ? "Creating account..." : "Create Account"}
           </Button>
         </form>
+
+        <div className="flex items-center gap-3 my-6">
+          <div className="h-px flex-1 bg-border" />
+          <span className="text-xs text-muted-foreground">OR</span>
+          <div className="h-px flex-1 bg-border" />
+        </div>
+
+        <GoogleAuthButton label="Sign up with Google" />
 
         <p className="mt-6 text-center text-sm text-muted-foreground">
           Already have an account?{" "}
@@ -154,10 +184,11 @@ export default function Signup() {
             className="text-primary hover:underline font-medium"
             data-testid="button-login-link"
           >
-            Log in
+            Sign In
           </button>
         </p>
-      </Card>
+        </div>
+      </div>
       </div>
       
       <Footer className="animate-fade-in animation-delay-800" />

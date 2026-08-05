@@ -1,5 +1,6 @@
 import { Navbar } from "@/components/Navbar";
 import { AppSidebar } from "@/components/AppSidebar";
+import { BottomNav } from "@/components/BottomNav";
 import { UploadCard } from "@/components/UploadCard";
 import { UploadModal } from "@/components/UploadModal";
 import { AlbumCard } from "@/components/AlbumCard";
@@ -21,6 +22,15 @@ import { useAuth } from "@/lib/auth";
 import { uploadFile } from "@/lib/upload";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { setAlbumUnlockToken, clearAlbumUnlockToken } from "@/lib/albumUnlock";
+import { StorageCard } from "@/components/StorageCard";
+import { UploadProgressList, type UploadFileState } from "@/components/UploadProgressList";
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export default function Dashboard() {
   const [, setLocation] = useLocation();
@@ -31,6 +41,7 @@ export default function Dashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadFiles, setUploadFiles] = useState<UploadFileState[]>([]);
   const [showPinDialog, setShowPinDialog] = useState(false);
   const [pinAction, setPinAction] = useState<{ albumId: string; action: 'lock' | 'unlock' | 'view' } | null>(null);
   const [isPinLoading, setIsPinLoading] = useState(false);
@@ -38,6 +49,13 @@ export default function Dashboard() {
   // Fetch albums from backend
   const { data: albums = [], isLoading: isLoadingAlbums } = useQuery<any[]>({
     queryKey: ["/api/albums"],
+    enabled: !!user,
+  });
+
+  // Storage usage — powers the StorageCard below (previously built but
+  // never wired up to real data).
+  const { data: storageUsage } = useQuery<{ usedGB: number; totalGB: number }>({
+    queryKey: ["/api/storage/usage"],
     enabled: !!user,
   });
 
@@ -76,12 +94,30 @@ export default function Dashboard() {
       const files = e.target?.files;
       if (!files || files.length === 0) return;
 
+      const fileArray = Array.from(files) as File[];
+      const totalFiles = fileArray.length;
+
+      // Give every file a stable id + starting state up front so the
+      // per-file progress list (matching the Figma Upload screen) can render
+      // immediately, before any bytes have actually gone out.
+      const initialStates: UploadFileState[] = fileArray.map((file, idx) => ({
+        id: `${Date.now()}-${idx}-${file.name}`,
+        name: file.name,
+        sizeLabel: formatFileSize(file.size),
+        progress: 0,
+        status: "uploading",
+        isVideo: file.type.startsWith("video/"),
+      }));
+
       setIsUploading(true);
       setUploadProgress(0);
+      setUploadFiles(initialStates);
+
+      const updateFile = (id: string, patch: Partial<UploadFileState>) => {
+        setUploadFiles((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)));
+      };
 
       try {
-        const fileArray = Array.from(files) as File[];
-        const totalFiles = fileArray.length;
         let uploadedFiles = 0;
 
         // Sequential uploads on mobile for better reliability
@@ -90,37 +126,38 @@ export default function Dashboard() {
         
         for (let i = 0; i < fileArray.length; i += batchSize) {
           const batch = fileArray.slice(i, i + batchSize);
+          const batchStates = initialStates.slice(i, i + batchSize);
           
           await Promise.all(
-            batch.map(async (file) => {
-              // Use upload helper with JWT authentication and progress tracking
+            batch.map(async (file, batchIdx) => {
+              const fileId = batchStates[batchIdx].id;
+
+              // Use upload helper with session-cookie authentication and
+              // per-file progress tracking.
               await uploadFile(file, albumId, (percent) => {
+                updateFile(fileId, { progress: Math.round(percent) });
                 const overallProgress = Math.round(((uploadedFiles + (percent / 100)) / totalFiles) * 100);
                 setUploadProgress(overallProgress);
               });
 
+              updateFile(fileId, { progress: 100, status: "done" });
               uploadedFiles++;
               setUploadProgress(Math.round((uploadedFiles / totalFiles) * 100));
-              
-              // Show individual file completion
-              if (totalFiles > 1) {
-                toast({
-                  title: `📤 ${uploadedFiles}/${totalFiles} uploaded`,
-                  description: file.name,
-                  duration: 2000,
-                });
-              }
             })
           );
         }
 
         queryClient.invalidateQueries({ queryKey: ["/api/albums"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/storage/usage"] });
         toast({
           title: "✅ Upload complete!",
           description: `${totalFiles} file(s) uploaded successfully.`,
         });
         setIsUploading(false);
         setUploadProgress(0);
+        // Leave the completed list visible briefly so the person sees the
+        // "Done" state, then clear it.
+        setTimeout(() => setUploadFiles([]), 3000);
       } catch (error: any) {
         toast({
           title: "Upload failed",
@@ -192,7 +229,30 @@ export default function Dashboard() {
 
     setIsPinLoading(true);
     try {
-      // First verify the PIN
+      if (pinAction.action === 'view') {
+        // SECURITY: previously this branch just verified the PIN generically
+        // (/api/auth/verify-pin) and then navigated — the server never
+        // checked the PIN again when the album's media was actually
+        // fetched, so a locked album's contents were readable by anyone who
+        // could reach the API directly. Now we request a short-lived,
+        // album-scoped unlock token and the media endpoints require it.
+        const { unlockToken } = await apiRequest(`/api/albums/${pinAction.albumId}/unlock-session`, {
+          method: "POST",
+          body: JSON.stringify({ pin }),
+        });
+
+        if (unlockToken) {
+          setAlbumUnlockToken(pinAction.albumId, unlockToken);
+        }
+
+        setShowPinDialog(false);
+        setPinAction(null);
+        setLocation(`/album/${pinAction.albumId}`);
+        return;
+      }
+
+      // Lock/unlock actions still verify generically first, then call the
+      // dedicated lock/unlock endpoint (which re-checks the PIN itself).
       const verifyResponse = await apiRequest("/api/auth/verify-pin", {
         method: "POST",
         body: JSON.stringify({ pin }),
@@ -202,24 +262,22 @@ export default function Dashboard() {
         throw new Error("Invalid PIN");
       }
 
-      // If this is a lock/unlock action (not just viewing)
-      if (pinAction.action === 'lock' || pinAction.action === 'unlock') {
-        const endpoint = `/api/albums/${pinAction.albumId}/${pinAction.action}`;
-        await apiRequest(endpoint, {
-          method: "POST",
-          body: JSON.stringify({ pin }),
-        });
+      const endpoint = `/api/albums/${pinAction.albumId}/${pinAction.action}`;
+      await apiRequest(endpoint, {
+        method: "POST",
+        body: JSON.stringify({ pin }),
+      });
 
-        queryClient.invalidateQueries({ queryKey: ["/api/albums"] });
-        
-        toast({
-          title: pinAction.action === 'lock' ? "Album Locked" : "Album Unlocked",
-          description: `The album has been ${pinAction.action}ed successfully.`,
-        });
-      } else if (pinAction.action === 'view') {
-        // Just navigate - album stays locked
-        setLocation(`/album/${pinAction.albumId}`);
+      if (pinAction.action === 'lock') {
+        clearAlbumUnlockToken(pinAction.albumId);
       }
+
+      queryClient.invalidateQueries({ queryKey: ["/api/albums"] });
+
+      toast({
+        title: pinAction.action === 'lock' ? "Album Locked" : "Album Unlocked",
+        description: `The album has been ${pinAction.action}ed successfully.`,
+      });
 
       setShowPinDialog(false);
       setPinAction(null);
@@ -271,7 +329,7 @@ export default function Dashboard() {
           />
         </div>
 
-        <main className="flex-1 container max-w-7xl mx-auto p-4 md:p-6 lg:p-8">
+        <main className="flex-1 container max-w-7xl mx-auto p-4 md:p-6 lg:p-8 pb-28 lg:pb-8">
           <div className="space-y-8">
             {/* Welcome Section */}
             <div className="space-y-2">
@@ -279,12 +337,20 @@ export default function Dashboard() {
               <p className="text-muted-foreground">Organize and manage your media collections</p>
             </div>
 
+            {/* Storage Usage */}
+            {storageUsage && (
+              <StorageCard usedGB={storageUsage.usedGB} totalGB={storageUsage.totalGB} />
+            )}
+
             {/* Upload Section */}
             <UploadCard
               onUploadClick={handleUploadClick}
               isUploading={isUploading}
               uploadProgress={uploadProgress}
             />
+
+            {/* Per-file upload progress, matching the Figma Upload screen */}
+            {uploadFiles.length > 0 && <UploadProgressList files={uploadFiles} />}
 
           {/* Tabbed Albums Section */}
           <Tabs defaultValue="all" className="w-full">
@@ -468,6 +534,8 @@ export default function Dashboard() {
         onClick={handleUploadClick}
         label="Upload Media"
       />
+
+      <BottomNav currentPath="/dashboard" />
 
       <CreateAlbumModal
         open={showCreateModal}

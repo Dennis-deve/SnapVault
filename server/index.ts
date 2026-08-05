@@ -1,11 +1,11 @@
 import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
+import fs from "fs";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import passport from "passport";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
-import fs from "fs";
 import path from "path";
 import { registerRoutes } from "./routes";
 import { setupAuth } from "./auth";
@@ -20,6 +20,16 @@ if (process.env.NODE_ENV === 'production') {
   app.set('trust proxy', 1);
 }
 const PgSession = connectPgSimple(session);
+
+// SECURITY: fail fast in production rather than silently signing session
+// cookies with a hardcoded, publicly-known secret (visible in this repo).
+const SESSION_SECRET = process.env.SESSION_SECRET;
+if (!SESSION_SECRET) {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("SESSION_SECRET must be set in production. Refusing to start with an insecure default.");
+  }
+  console.warn("[session] WARNING: SESSION_SECRET is not set. Using an insecure development-only secret.");
+}
 
 // Simple logging function
 function log(message: string, source = "express") {
@@ -85,16 +95,19 @@ declare module 'http' {
   }
 }
 
-// Increase body size limit to 1GB for large video uploads (100+MB files)
+// Media uploads go through the dedicated multipart /api/upload route (Multer,
+// capped at 200MB — see routes.ts), NOT through this JSON parser. A large
+// limit here was unnecessary attack surface for every ordinary JSON API call
+// (login, album create, etc.), since a huge JSON body ties up parsing time.
 app.use(express.json({
-  limit: '1gb',
+  limit: '10mb',
   verify: (req, _res, buf) => {
     req.rawBody = buf;
   }
 }));
 app.use(express.urlencoded({ 
   extended: false,
-  limit: '1gb'
+  limit: '10mb'
 }));
 
 app.use(
@@ -105,7 +118,7 @@ app.use(
       createTableIfMissing: true,
       pruneSessionInterval: 60 * 15, // Clean up expired sessions every 15 minutes
     }),
-    secret: process.env.SESSION_SECRET || "snapvault-secret-change-in-production",
+    secret: SESSION_SECRET || "snapvault-secret-change-in-production",
     resave: false,
     saveUninitialized: false,
     proxy: process.env.NODE_ENV === "production",
@@ -139,7 +152,14 @@ app.use((req, res, next) => {
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+        // Redact sensitive fields before they ever hit the logs.
+        const SENSITIVE_KEYS = ["password", "pin", "token", "unlockToken", "newPassword"];
+        const redacted = Object.fromEntries(
+          Object.entries(capturedJsonResponse).map(([k, v]) =>
+            SENSITIVE_KEYS.includes(k) ? [k, "[REDACTED]"] : [k, v]
+          )
+        );
+        logLine += ` :: ${JSON.stringify(redacted)}`;
       }
 
       if (logLine.length > 80) {
@@ -160,10 +180,15 @@ app.use((req, res, next) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
+    // Log server-side for diagnostics. Previously this handler re-threw the
+    // error after the response was already sent, which risks crashing the
+    // whole Node process (taking down every connected user) on any request
+    // that reaches this handler.
+    console.error(err);
+
     if (!res.headersSent) {
       res.status(status).json({ message });
     }
-    console.error(err);
   });
 
   // importantly only setup vite in development and after
@@ -174,27 +199,30 @@ app.use((req, res, next) => {
     const { setupVite } = await import("./vite.js");
     await setupVite(app, server);
   } else {
-    // In production, serve static files from dist/public when the frontend build exists.
-    // The compiled server is at dist/index.js, so public files are at dist/public.
+    // In production, only serve the built client if this process actually
+    // has a frontend bundle. On Render we deploy the API and the static site
+    // separately, so the API service should not depend on dist/public.
     const { fileURLToPath } = await import('url');
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(__filename);
     const distPath = path.join(__dirname, "public");
-    const indexPath = path.join(distPath, "index.html");
 
-    if (fs.existsSync(indexPath)) {
+    const hasClientBundle = fs.existsSync(path.join(distPath, "index.html"));
+
+    if (hasClientBundle) {
       log(`Serving static files from: ${distPath}`);
       app.use(express.static(distPath));
 
-      // Catch-all route for SPA
+      // Catch-all route for monolithic deployments that bundle the frontend.
       app.get("*", (_req, res) => {
+        const indexPath = path.join(distPath, "index.html");
         log(`Serving index.html from: ${indexPath}`);
         res.sendFile(indexPath);
       });
     } else {
-      log(`Frontend build not found at ${indexPath}; serving API-only responses for non-API requests.`);
-      app.get("*", (_req, res) => {
-        res.status(404).json({ message: "Not found" });
+      log("No client bundle found in dist/public; running in API-only mode.");
+      app.get("/", (_req, res) => {
+        res.json({ message: "SnapVault API is running" });
       });
     }
   }
