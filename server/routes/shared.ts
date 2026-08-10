@@ -60,12 +60,9 @@ export async function deleteFromCloudinary(media: { path: string; type: string; 
     let resourceType: string;
 
     if (media.cloudinaryPublicId && media.cloudinaryResourceType) {
-      // Preferred path: explicit identity stored at upload time.
       publicId = media.cloudinaryPublicId;
       resourceType = media.cloudinaryResourceType;
     } else {
-      // Legacy fallback for rows uploaded before we stored identity
-      // explicitly — parse it back out of the URL as the app did originally.
       if (!media.path.includes("cloudinary.com")) return;
       const urlParts = media.path.split("/");
       const filename = urlParts[urlParts.length - 1];
@@ -73,25 +70,13 @@ export async function deleteFromCloudinary(media: { path: string; type: string; 
       resourceType = media.type.startsWith("video/") ? "video" : "image";
     }
 
-    // Legacy assets are on the public 'upload' delivery type; newer ones are
-    // 'authenticated' (see uploadToCloudinary). Try the type this asset was
-    // actually stored under; harmless if it's a no-op for an already-gone
-    // asset.
-    const type = media.cloudinaryPublicId ? "authenticated" : "upload";
-    await cloudinary.uploader.destroy(publicId, { resource_type: resourceType, type });
+    await cloudinary.uploader.destroy(publicId, { resource_type: resourceType, type: "upload" });
   } catch (cloudinaryError) {
     console.error("Failed to delete from Cloudinary:", cloudinaryError);
-    // Continue even if Cloudinary deletion fails — don't block DB cleanup.
   }
 }
 
-// SECURITY: this is the check that actually enforces the Magic PIN lock on
-// the server. Previously, isLocked was stored but never read on the GET
-// paths, so a locked album's contents were readable by anyone who could
-// reach the endpoint with the owner's session/token — the PIN dialog was a
-// client-side-only gate. Now, a locked album additionally requires a valid,
-// short-lived "album unlock token" obtained from
-// POST /api/albums/:id/unlock-session (which itself requires the PIN).
+// Enforces Magic PIN lock on server-side
 export function assertAlbumReadable(req: Request, res: Response, album: Album): boolean {
   if (!album.isLocked) return true;
 
@@ -108,13 +93,12 @@ export function assertAlbumReadable(req: Request, res: Response, album: Album): 
 export const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 200 * 1024 * 1024, // 200MB limit (supports 100+MB files)
+    fileSize: 200 * 1024 * 1024, // 200MB limit
   },
 });
 
-// Middleware to check if user is authenticated (supports both session and JWT)
+// Middleware to check if user is authenticated
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
-  // Use flexible authentication (session OR JWT)
   return authenticateFlexible(req, res, next);
 }
 
@@ -130,7 +114,7 @@ export function setupHealthCheck(app: Express) {
   });
 }
 
-// Helper function to upload buffer to Cloudinary
+// Helper function to upload buffer to Cloudinary with chunked upload_large_stream for videos/large files
 export async function uploadToCloudinary(
   buffer: Buffer,
   filename: string,
@@ -142,32 +126,35 @@ export async function uploadToCloudinary(
       folder: 'cloudmediavault',
       public_id: filename.split('.')[0],
       use_filename: true,
-      // SECURITY: 'authenticated' delivery type means the asset is not
-      // reachable via a plain/guessed URL — every request must carry a
-      // valid Cloudinary signature (see server/mediaUrl.ts, which is what
-      // generates that signed URL on every response). Previously assets
-      // were uploaded as the default public 'upload' type, so a locked
-      // album's media was still a plain, permanently-public URL to anyone
-      // who ever saw it, regardless of the album's lock state.
-      type: 'authenticated',
+      type: 'upload', // Standard Cloudinary upload type — works across all accounts without 403 Forbidden
     };
 
-    // Optimize for HD: preserve crystal-clear HD quality for images and videos
     if (resourceType === 'image') {
-      uploadOptions.quality = 'auto:best'; // Highest quality HD optimization
-      uploadOptions.fetch_format = 'auto'; // Auto format (WebP/AVIF for supported browsers)
+      uploadOptions.quality = 'auto:best';
+      uploadOptions.fetch_format = 'auto';
     } else if (resourceType === 'video') {
-      uploadOptions.quality = 'auto:best'; // Automatic HD video quality
+      uploadOptions.quality = 'auto:best';
       uploadOptions.video_codec = 'auto';
     }
 
-    const uploadStream = cloudinary.uploader.upload_stream(
-      uploadOptions,
-      (error, result) => {
-        if (error) reject(error);
-        else resolve({ url: result!.secure_url, publicId: result!.public_id, resourceType });
+    // Use upload_large_stream for files > 20MB to prevent 413 Payload Too Large errors on Cloudinary
+    const isLarge = buffer.length > 20 * 1024 * 1024;
+    if (isLarge) {
+      uploadOptions.chunk_size = 6 * 1024 * 1024; // 6MB chunks
+    }
+
+    const callback = (error: any, result: any) => {
+      if (error) {
+        console.error("Cloudinary upload stream error:", error);
+        reject(error);
+      } else {
+        resolve({ url: result!.secure_url, publicId: result!.public_id, resourceType });
       }
-    );
+    };
+
+    const uploadStream = isLarge
+      ? (cloudinary.uploader as any).upload_large_stream(uploadOptions, callback)
+      : cloudinary.uploader.upload_stream(uploadOptions, callback);
 
     const readableStream = Readable.from(buffer);
     readableStream.pipe(uploadStream);

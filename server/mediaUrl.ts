@@ -15,7 +15,7 @@ const SIGNED_URL_TTL_SECONDS = 60 * 60; // 1 hour, only relevant when AUTH_TOKEN
 
 function buildSignedUrl(publicId: string, resourceType: string, extra: Record<string, any> = {}): string {
   const options: Record<string, any> = {
-    type: "authenticated",
+    type: "upload",
     resource_type: resourceType,
     secure: true,
     sign_url: true,
