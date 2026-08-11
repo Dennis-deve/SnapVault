@@ -85,92 +85,85 @@ export default function Dashboard() {
     setShowUploadModal(true);
   };
 
-  const handleAlbumSelectForUpload = async (albumId: string) => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.multiple = true;
-    input.accept = 'image/*,video/*';
-    
-    input.onchange = async (e: any) => {
-      const files = e.target?.files;
-      if (!files || files.length === 0) return;
+  const [targetAlbumId, setTargetAlbumId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-      const fileArray = Array.from(files) as File[];
-      const totalFiles = fileArray.length;
+  const handleAlbumSelectForUpload = (albumId: string) => {
+    setTargetAlbumId(albumId);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+      fileInputRef.current.click();
+    }
+  };
 
-      // Give every file a stable id + starting state up front so the
-      // per-file progress list (matching the Figma Upload screen) can render
-      // immediately, before any bytes have actually gone out.
-      const initialStates: UploadFileState[] = fileArray.map((file, idx) => ({
-        id: `${Date.now()}-${idx}-${file.name}`,
-        name: file.name,
-        sizeLabel: formatFileSize(file.size),
-        progress: 0,
-        status: "uploading",
-        isVideo: file.type.startsWith("video/"),
-      }));
+  const handleDashboardFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    const albumId = targetAlbumId;
+    if (!files || files.length === 0 || !albumId) return;
 
-      setIsUploading(true);
-      setUploadProgress(0);
-      setUploadFiles(initialStates);
+    const fileArray = Array.from(files) as File[];
+    const totalFiles = fileArray.length;
 
-      const updateFile = (id: string, patch: Partial<UploadFileState>) => {
-        setUploadFiles((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)));
-      };
+    const initialStates: UploadFileState[] = fileArray.map((file, idx) => ({
+      id: `${Date.now()}-${idx}-${file.name}`,
+      name: file.name,
+      sizeLabel: formatFileSize(file.size),
+      progress: 0,
+      status: "uploading",
+      isVideo: file.type.startsWith("video/"),
+    }));
 
-      try {
-        let uploadedFiles = 0;
+    setIsUploading(true);
+    setUploadProgress(0);
+    setUploadFiles(initialStates);
 
-        // Sequential uploads on mobile for better reliability
-        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-        const batchSize = isMobile ? 1 : 3;
-        
-        for (let i = 0; i < fileArray.length; i += batchSize) {
-          const batch = fileArray.slice(i, i + batchSize);
-          const batchStates = initialStates.slice(i, i + batchSize);
-          
-          await Promise.all(
-            batch.map(async (file, batchIdx) => {
-              const fileId = batchStates[batchIdx].id;
-
-              // Use upload helper with session-cookie authentication and
-              // per-file progress tracking.
-              await uploadFile(file, albumId, (percent) => {
-                updateFile(fileId, { progress: Math.round(percent) });
-                const overallProgress = Math.round(((uploadedFiles + (percent / 100)) / totalFiles) * 100);
-                setUploadProgress(overallProgress);
-              });
-
-              updateFile(fileId, { progress: 100, status: "done" });
-              uploadedFiles++;
-              setUploadProgress(Math.round((uploadedFiles / totalFiles) * 100));
-            })
-          );
-        }
-
-        queryClient.invalidateQueries({ queryKey: ["/api/albums"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/storage/usage"] });
-        toast({
-          title: "✅ Upload complete!",
-          description: `${totalFiles} file(s) uploaded successfully.`,
-        });
-        setIsUploading(false);
-        setUploadProgress(0);
-        // Leave the completed list visible briefly so the person sees the
-        // "Done" state, then clear it.
-        setTimeout(() => setUploadFiles([]), 3000);
-      } catch (error: any) {
-        toast({
-          title: "Upload failed",
-          description: error.message || "Failed to upload files",
-          variant: "destructive",
-        });
-        setIsUploading(false);
-        setUploadProgress(0);
-      }
+    const updateFile = (id: string, patch: Partial<UploadFileState>) => {
+      setUploadFiles((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)));
     };
 
-    input.click();
+    try {
+      let uploadedFiles = 0;
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      const batchSize = isMobile ? 1 : 3;
+
+      for (let i = 0; i < fileArray.length; i += batchSize) {
+        const batch = fileArray.slice(i, i + batchSize);
+        const batchStates = initialStates.slice(i, i + batchSize);
+
+        await Promise.all(
+          batch.map(async (file, batchIdx) => {
+            const fileId = batchStates[batchIdx].id;
+
+            await uploadFile(file, albumId, (percent) => {
+              updateFile(fileId, { progress: Math.round(percent) });
+              const overallProgress = Math.round(((uploadedFiles + (percent / 100)) / totalFiles) * 100);
+              setUploadProgress(overallProgress);
+            });
+
+            updateFile(fileId, { progress: 100, status: "done" });
+            uploadedFiles++;
+            setUploadProgress(Math.round((uploadedFiles / totalFiles) * 100));
+          })
+        );
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["/api/albums"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/storage/usage"] });
+      toast({
+        title: "✅ Upload complete!",
+        description: `${totalFiles} file(s) uploaded successfully.`,
+      });
+      setIsUploading(false);
+      setUploadProgress(0);
+    } catch (error: any) {
+      toast({
+        title: "Upload failed",
+        description: error.message || "Failed to upload files",
+        variant: "destructive",
+      });
+      setIsUploading(false);
+      setUploadProgress(0);
+    }
   };
 
   const handleCreateAlbum = async (name: string, description?: string, isLocked?: boolean, pin?: string) => {
@@ -564,6 +557,14 @@ export default function Dashboard() {
         isLoading={isPinLoading}
       />
       
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleDashboardFileSelect}
+        multiple
+        accept="image/*,video/*,image/heic,image/heif,.heic,.heif"
+        className="hidden"
+      />
       <Footer className="mt-8" />
     </div>
   );

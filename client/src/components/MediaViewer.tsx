@@ -260,20 +260,21 @@ export function MediaViewer({
 
           {/* Media content - tap anywhere to toggle controls */}
           <div 
-            className="flex-1 flex items-center justify-center overflow-hidden cursor-pointer select-none"
+            className="flex-1 min-h-0 min-w-0 w-full h-full flex items-center justify-center overflow-hidden cursor-pointer select-none p-2 sm:p-4"
             onClick={() => setControlsVisible(!controlsVisible)}
           >
             {type.startsWith("image/") ? (
               <img
                 src={path}
                 alt={filename}
-                className={`max-w-full max-h-full object-contain transition-all duration-200 ${isTransitioning ? "opacity-0 scale-95" : "opacity-100 scale-100"}`}
+                className={`max-w-full max-h-full w-auto h-auto object-contain transition-all duration-200 ${isTransitioning ? "opacity-0 scale-95" : "opacity-100 scale-100"}`}
               />
             ) : type.startsWith("video/") ? (
               <video
                 src={path}
                 controls
-                className={`max-w-full max-h-full object-contain transition-all duration-200 ${isTransitioning ? "opacity-0 scale-95" : "opacity-100 scale-100"}`}
+                playsInline
+                className={`max-w-full max-h-full w-auto h-auto object-contain transition-all duration-200 ${isTransitioning ? "opacity-0 scale-95" : "opacity-100 scale-100"}`}
               />
             ) : null}
           </div>

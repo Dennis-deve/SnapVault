@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ArrowLeft, MoreVertical, Upload, Lock, Trash2 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation, useRoute } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
@@ -38,7 +38,7 @@ export default function AlbumView() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadFiles, setUploadFiles] = useState<UploadFileState[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const fileInputRef = useState<HTMLInputElement | null>(null)[0];
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [mediaFilter, setMediaFilter] = useState<"all" | "photos" | "videos" | "favorites">("all");
   const [selectMode, setSelectMode] = useState(false);
@@ -424,12 +424,10 @@ export default function AlbumView() {
   };
 
   const handleUploadClick = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.multiple = true;
-    input.accept = 'image/*,video/*';
-    input.onchange = handleFileSelect as any;
-    input.click();
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+      fileInputRef.current.click();
+    }
   };
 
   const handleDeleteMedia = async () => {
@@ -817,6 +815,14 @@ export default function AlbumView() {
         isLoading={isPinLoading}
       />
 
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileSelect}
+        multiple
+        accept="image/*,video/*,image/heic,image/heif,.heic,.heif"
+        className="hidden"
+      />
       <Footer className="mt-8" />
       <BottomNav currentPath={`/album/${albumId}`} />
     </div>
