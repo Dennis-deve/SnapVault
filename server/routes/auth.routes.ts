@@ -140,13 +140,9 @@ export function registerAuthRoutes(app: Express) {
       "/api/auth/google/callback",
       passport.authenticate("google", { failureRedirect: "/login?error=google_auth_failed", session: true }),
       (req: Request, res: Response) => {
-        // Full-page OAuth redirect flow (not a fetch call), so this needs an
-        // actual browser redirect back to the SPA rather than a JSON
-        // response. CLIENT_URL matches the pattern already used for
-        // password-reset emails; falls back to the request's own host for a
-        // same-origin monolithic deployment.
         const baseUrl = getAppBaseUrl(req);
-        res.redirect(`${baseUrl.replace(/\/$/, "")}/dashboard`);
+        const token = generateToken(req.user!.id);
+        res.redirect(`${baseUrl.replace(/\/$/, "")}/dashboard?token=${encodeURIComponent(token)}`);
       }
     );
   } else {
