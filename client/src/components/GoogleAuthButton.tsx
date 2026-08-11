@@ -17,18 +17,17 @@ function GoogleIcon() {
 }
 
 export function GoogleAuthButton({ label = "Continue with Google" }: GoogleAuthButtonProps) {
-  // Only render once we know the server actually has Google OAuth
-  // credentials configured — otherwise this would be a button that leads to
-  // a 501 error, which is worse than no button at all.
   const { data, isLoading } = useQuery<{ enabled: boolean }>({
     queryKey: ["/api/auth/google/status"],
   });
 
   if (isLoading || !data?.enabled) return null;
 
+  const authUrl = `${getApiUrl("/api/auth/google")}?origin=${encodeURIComponent(window.location.origin)}`;
+
   return (
     <a
-      href={getApiUrl("/api/auth/google")}
+      href={authUrl}
       className="w-full h-12 rounded-2xl border border-input bg-background hover:bg-muted transition-colors flex items-center justify-center gap-3 text-sm font-semibold"
       data-testid="button-google-auth"
     >

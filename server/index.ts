@@ -229,15 +229,9 @@ app.use((req, res, next) => {
       // Redirect to the frontend application URL (FRONTEND_URL)
       app.get("*", (req, res, next) => {
         if (req.path.startsWith("/api")) return next();
-        const frontendUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL;
-        if (frontendUrl) {
-          const target = new URL(req.originalUrl, frontendUrl).toString();
-          return res.redirect(302, target);
-        }
-        res.status(404).json({
-          message: "API-only mode. Access the web interface at the frontend URL.",
-          frontendUrl: process.env.FRONTEND_URL || null,
-        });
+        const frontendUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || "https://snapvault-moau.onrender.com";
+        const target = new URL(req.originalUrl, frontendUrl).toString();
+        return res.redirect(302, target);
       });
     }
   }

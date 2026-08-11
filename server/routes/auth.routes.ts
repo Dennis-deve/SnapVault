@@ -134,15 +134,36 @@ export function registerAuthRoutes(app: Express) {
   });
 
   if (isGoogleAuthConfigured()) {
-    app.get("/api/auth/google", passport.authenticate("google", { scope: ["profile", "email"] }));
+    app.get("/api/auth/google", (req: Request, res: Response, next: NextFunction) => {
+      const originQuery = typeof req.query.origin === "string" ? req.query.origin : "";
+      const clientOrigin = originQuery || req.headers.referer || process.env.FRONTEND_URL || process.env.CLIENT_URL || "https://snapvault-moau.onrender.com";
+
+      let targetFrontend = "https://snapvault-moau.onrender.com";
+      try {
+        const u = new URL(clientOrigin);
+        targetFrontend = `${u.protocol}//${u.host}`;
+      } catch {}
+
+      passport.authenticate("google", {
+        scope: ["profile", "email"],
+        state: targetFrontend,
+      })(req, res, next);
+    });
 
     app.get(
       "/api/auth/google/callback",
       passport.authenticate("google", { failureRedirect: "/login?error=google_auth_failed", session: true }),
       (req: Request, res: Response) => {
-        const baseUrl = getAppBaseUrl(req);
+        let targetFrontend = (req.query.state as string) || process.env.FRONTEND_URL || process.env.CLIENT_URL || "https://snapvault-moau.onrender.com";
+        try {
+          const u = new URL(targetFrontend);
+          targetFrontend = `${u.protocol}//${u.host}`;
+        } catch {
+          targetFrontend = "https://snapvault-moau.onrender.com";
+        }
+
         const token = generateToken(req.user!.id);
-        res.redirect(`${baseUrl.replace(/\/$/, "")}/dashboard?token=${encodeURIComponent(token)}`);
+        res.redirect(`${targetFrontend.replace(/\/$/, "")}/dashboard?token=${encodeURIComponent(token)}`);
       }
     );
   } else {
