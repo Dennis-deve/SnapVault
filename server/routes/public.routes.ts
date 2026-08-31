@@ -10,7 +10,12 @@ export function registerPublicRoutes(app: Express) {
   app.get("/api/public/albums/:shareToken", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const album = await storage.getAlbumByShareToken(req.params.shareToken);
-      if (!album || !album.isPublic) {
+      // Defense in depth: locking an album now also flips isPublic off (see
+      // POST /:id/lock in albums.routes.ts), so isLocked here should never
+      // be true on a row where isPublic is also true. Checking both anyway
+      // means this route can't leak a locked album's contents even if that
+      // invariant is ever violated by a future code path or a stale row.
+      if (!album || !album.isPublic || album.isLocked) {
         return res.status(404).json({ message: "This shared album doesn't exist or is no longer available" });
       }
 
@@ -28,7 +33,7 @@ export function registerPublicRoutes(app: Express) {
   app.get("/api/public/albums/:shareToken/media", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const album = await storage.getAlbumByShareToken(req.params.shareToken);
-      if (!album || !album.isPublic) {
+      if (!album || !album.isPublic || album.isLocked) {
         return res.status(404).json({ message: "This shared album doesn't exist or is no longer available" });
       }
 

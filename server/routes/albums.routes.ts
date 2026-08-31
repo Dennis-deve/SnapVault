@@ -150,6 +150,22 @@ export function registerAlbumRoutes(app: Express) {
       }
 
       await storage.lockAlbum(req.params.id);
+
+      // SECURITY: sharing an album is only allowed while it's unlocked (see
+      // the check in POST /:id/share above), but nothing previously stopped
+      // the reverse — locking an album that was *already* publicly shared.
+      // Since the public read routes in public.routes.ts only ever checked
+      // isPublic and never isLocked, that meant flipping a shared album's
+      // lock on gave zero protection: the same public share link kept
+      // serving its media to anyone who had it, PIN or no PIN. Revoke the
+      // public link as part of locking so "locked" always means locked,
+      // regardless of how the album got there. The shareToken itself is
+      // left in place (same convention as /unshare) so re-sharing after an
+      // unlock reuses the same link instead of minting a new one.
+      if (album.isPublic) {
+        await storage.setAlbumSharing(req.params.id, false);
+      }
+
       res.json({ message: "Album locked successfully" });
     } catch (error) {
       next(error);

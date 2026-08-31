@@ -9,6 +9,7 @@ import {
   assertAlbumReadable,
   deleteFromCloudinary,
   uploadToCloudinary,
+  cleanupTempFile,
 } from "./shared";
 
 export function registerMediaRoutes(app: Express) {
@@ -94,9 +95,11 @@ export function registerMediaRoutes(app: Express) {
         type: resourceType
       });
 
-      // Upload to Cloudinary
+      // Upload to Cloudinary (streamed from the temp file multer wrote to
+      // disk — see server/routes/shared.ts for why this is no longer a
+      // Buffer held in memory)
       const uploaded = await uploadToCloudinary(
-        req.file.buffer,
+        req.file.path,
         req.file.originalname,
         resourceType
       );
@@ -120,6 +123,15 @@ export function registerMediaRoutes(app: Express) {
     } catch (error) {
       console.error("Upload error:", error);
       next(error);
+    } finally {
+      // Defensive cleanup: uploadToCloudinary already removes the temp file
+      // on both success and failure, so this is a harmless no-op in the
+      // normal path. It only matters for the early-return branches above
+      // (no albumId ownership, etc.) where multer wrote a temp file to disk
+      // but uploadToCloudinary was never reached to clean it up.
+      if (req.file) {
+        await cleanupTempFile(req.file.path);
+      }
     }
   });
 

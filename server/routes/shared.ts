@@ -6,9 +6,12 @@ import type { Express, Request, Response, NextFunction } from "express";
 import rateLimit from "express-rate-limit";
 import multer from "multer";
 import cloudinary from "../cloudinary";
-import { Readable } from "stream";
 import { authenticateFlexible, verifyAlbumUnlockToken } from "../jwt";
 import type { Album } from "@shared/schema";
+import fs from "fs";
+import os from "os";
+import path from "path";
+import crypto from "crypto";
 
 // Rate limiter for auth endpoints (stricter) — protects against distributed
 // (single-IP) brute force.
@@ -104,13 +107,55 @@ export function assertAlbumReadable(req: Request, res: Response, album: Album): 
   return false;
 }
 
-// Configure Multer for memory storage with 200MB limit for large videos
+// RELIABILITY: uploads used to use multer.memoryStorage(), which holds the
+// *entire* file in a single Buffer in the Node process's heap before it's
+// ever forwarded to Cloudinary. On a small hosting instance (this app's
+// free-tier Render/Railway plans), a single large phone-recorded video
+// (100-200MB) can be enough to push the process over its memory ceiling on
+// its own, and a couple of concurrent uploads make an out-of-memory crash
+// close to guaranteed. It also meant the request body had to be fully
+// received before any Cloudinary upload could even start.
+//
+// Fix: stream to a temp file on disk instead (multer.diskStorage). Disk
+// writes happen incrementally as bytes arrive over the network, so memory
+// usage stays flat (a small internal buffer) regardless of file size. The
+// resulting file path is then handed to Cloudinary's chunked "upload_large"
+// API (see uploadToCloudinary below), which reads it back off disk in
+// bounded-size chunks rather than loading it into memory either. End to
+// end, RAM usage no longer scales with upload size.
+const TMP_UPLOAD_DIR = path.join(os.tmpdir(), "snapvault-uploads");
+fs.mkdirSync(TMP_UPLOAD_DIR, { recursive: true });
+
 export const upload = multer({
-  storage: multer.memoryStorage(),
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, TMP_UPLOAD_DIR),
+    filename: (_req, file, cb) => {
+      // Random name to avoid collisions between concurrent uploads;
+      // preserve the extension since Cloudinary/ffprobe-style sniffing
+      // sometimes relies on it.
+      const ext = path.extname(file.originalname) || "";
+      cb(null, `${crypto.randomUUID()}${ext}`);
+    },
+  }),
   limits: {
     fileSize: 200 * 1024 * 1024, // 200MB limit (supports 100+MB files)
   },
 });
+
+// Best-effort cleanup of a temp upload file. Never throws — cleanup failures
+// shouldn't fail the request, they just leave a stray file for the OS temp
+// dir to reclaim. Returns a promise so callers that care about the file
+// actually being gone (e.g. before responding, or in tests) can await it;
+// callers that don't care can call it without awaiting.
+export async function cleanupTempFile(filePath: string): Promise<void> {
+  try {
+    await fs.promises.unlink(filePath);
+  } catch (err: any) {
+    if (err?.code !== "ENOENT") {
+      console.error("Failed to remove temp upload file:", filePath, err);
+    }
+  }
+}
 
 // Middleware to check if user is authenticated (supports both session and JWT)
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -130,46 +175,71 @@ export function setupHealthCheck(app: Express) {
   });
 }
 
-// Helper function to upload buffer to Cloudinary
+// Helper function to upload a file already on disk (see multer diskStorage
+// above) to Cloudinary, and remove the temp file once Cloudinary is done
+// with it — win or lose.
+//
+// Videos use Cloudinary's chunked "upload_large" endpoint instead of a
+// single-shot upload. It reads the local file in bounded-size chunks
+// (CHUNK_SIZE_BYTES each) and uploads them one at a time, which:
+//   - keeps server memory flat no matter how large the video is (this is
+//     the other half of the memory fix alongside disk-based multer above),
+//   - is Cloudinary's documented, recommended path for large/video assets
+//     and tolerates flaky mobile-network conditions better than one huge
+//     request, since it's resumable per-chunk rather than all-or-nothing.
+// Images are small enough that a plain upload is fine and avoids the
+// chunking overhead.
+const CHUNK_SIZE_BYTES = 6 * 1024 * 1024; // 6MB chunks
+
 export async function uploadToCloudinary(
-  buffer: Buffer,
+  filePath: string,
   filename: string,
   resourceType: 'image' | 'video'
 ): Promise<{ url: string; publicId: string; resourceType: 'image' | 'video' }> {
-  return new Promise((resolve, reject) => {
-    const uploadOptions: any = {
-      resource_type: resourceType,
-      folder: 'cloudmediavault',
-      public_id: filename.split('.')[0],
-      use_filename: true,
-      // SECURITY: 'authenticated' delivery type means the asset is not
-      // reachable via a plain/guessed URL — every request must carry a
-      // valid Cloudinary signature (see server/mediaUrl.ts, which is what
-      // generates that signed URL on every response). Previously assets
-      // were uploaded as the default public 'upload' type, so a locked
-      // album's media was still a plain, permanently-public URL to anyone
-      // who ever saw it, regardless of the album's lock state.
-      type: 'authenticated',
-    };
+  const uploadOptions: any = {
+    resource_type: resourceType,
+    folder: 'cloudmediavault',
+    public_id: filename.split('.')[0],
+    use_filename: true,
+    // SECURITY: 'authenticated' delivery type means the asset is not
+    // reachable via a plain/guessed URL — every request must carry a
+    // valid Cloudinary signature (see server/mediaUrl.ts, which is what
+    // generates that signed URL on every response). Previously assets
+    // were uploaded as the default public 'upload' type, so a locked
+    // album's media was still a plain, permanently-public URL to anyone
+    // who ever saw it, regardless of the album's lock state.
+    type: 'authenticated',
+  };
 
-    // Optimize for HD: preserve crystal-clear HD quality for images and videos
-    if (resourceType === 'image') {
-      uploadOptions.quality = 'auto:best'; // Highest quality HD optimization
-      uploadOptions.fetch_format = 'auto'; // Auto format (WebP/AVIF for supported browsers)
-    } else if (resourceType === 'video') {
-      uploadOptions.quality = 'auto:best'; // Automatic HD video quality
-      uploadOptions.video_codec = 'auto';
-    }
+  // Optimize for HD: preserve crystal-clear HD quality for images and videos
+  if (resourceType === 'image') {
+    uploadOptions.quality = 'auto:best'; // Highest quality HD optimization
+    uploadOptions.fetch_format = 'auto'; // Auto format (WebP/AVIF for supported browsers)
+  } else if (resourceType === 'video') {
+    uploadOptions.quality = 'auto:best'; // Automatic HD video quality
+    uploadOptions.video_codec = 'auto';
+    uploadOptions.chunk_size = CHUNK_SIZE_BYTES;
+  }
 
-    const uploadStream = cloudinary.uploader.upload_stream(
-      uploadOptions,
-      (error, result) => {
+  try {
+    const result = await new Promise<{ secure_url: string; public_id: string }>((resolve, reject) => {
+      const callback = (error: any, result: any) => {
         if (error) reject(error);
-        else resolve({ url: result!.secure_url, publicId: result!.public_id, resourceType });
-      }
-    );
+        else resolve(result);
+      };
 
-    const readableStream = Readable.from(buffer);
-    readableStream.pipe(uploadStream);
-  });
+      if (resourceType === 'video') {
+        cloudinary.uploader.upload_large(filePath, uploadOptions, callback);
+      } else {
+        cloudinary.uploader.upload(filePath, uploadOptions, callback);
+      }
+    });
+
+    return { url: result.secure_url, publicId: result.public_id, resourceType };
+  } finally {
+    // Runs whether the upload succeeded or failed — the temp file has no
+    // further use either way. Awaited so the file is guaranteed gone by
+    // the time this function returns, rather than racing the caller.
+    await cleanupTempFile(filePath);
+  }
 }
