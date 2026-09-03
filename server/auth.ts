@@ -56,7 +56,14 @@ export function setupAuth() {
   const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
 
   if (googleClientId && googleClientSecret) {
-    const callbackURL = process.env.GOOGLE_CALLBACK_URL || "/api/auth/google/callback";
+    // Accept BOTH the documented GOOGLE_CALLBACK_URL and the GOOGLE_CALL_URL
+    // name that is actually set in some Render environments. Without this, the
+    // Render value is ignored and OAuth falls back to a relative path, which
+    // Google rejects (it requires an absolute redirect URI).
+    const callbackURL =
+      process.env.GOOGLE_CALLBACK_URL ||
+      process.env.GOOGLE_CALL_URL ||
+      "/api/auth/google/callback";
 
     passport.use(
       new GoogleStrategy(
