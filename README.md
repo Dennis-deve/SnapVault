@@ -189,10 +189,10 @@ Required environment variables:
 SnapVault is optimized for deployment on Render.com with full-stack Node.js support.
 
 **Quick Deploy:**
-1. See `RENDER_QUICK_START.md` for 5-minute deployment
-2. See `RENDER_DEPLOYMENT.md` for comprehensive guide
+1. See `DEPLOYMENT.md` for a quick deployment overview
+2. See `DEPLOYMENT_GUIDE.md` for the comprehensive guide
 
-**Live URL:** https://snapvault.onrender.com
+**Live URL:** https://snapvault-moau.onrender.com
 
 **Features:**
 - ✅ Free SSL certificate
