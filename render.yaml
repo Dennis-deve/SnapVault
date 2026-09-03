@@ -1,5 +1,12 @@
 services:
-  # Frontend Static Site - SPA with client-side routing
+  # Frontend Static Site - SPA with client-side routing.
+  #
+  # IMPORTANT (SPA fallback / "page not found on refresh"):
+  # Rewrite rules in a Blueprint file (routes below) are only applied to a
+  # service that was CREATED FROM this Blueprint. If the live static site was
+  # created manually in the dashboard, add this rule there too:
+  #   Settings -> Redirects/Rewrites -> Source: /*  Destination: /index.html  Action: Rewrite
+  # The client/public/_redirects file is Netlify-only and is NOT used by Render.
   - type: web
     name: snapvault
     buildCommand: npm install && npm run build:client
@@ -21,6 +28,11 @@ services:
         value: https://snapvault-api.onrender.com
 
   # Backend API Service (Node.js + Express)
+  #
+  # When the API runs in API-only mode (no client bundle) it redirects non-API
+  # paths to the frontend. FRONTEND_URL/CLIENT_URL must point at the LIVE
+  # frontend site, or emailed links (password reset, verify email, welcome)
+  # will go to the wrong place.
   - type: web
     name: snapvault-api
     runtime: node
@@ -32,19 +44,37 @@ services:
     envVars:
       - key: DATABASE_URL
         sync: false
-      - key: CLOUDINARY_CLOUD_NAME
-        sync: false
-      - key: CLOUDINARY_API_KEY
-        sync: false
-      - key: CLOUDINARY_API_SECRET
-        sync: false
       - key: SESSION_SECRET
         generateValue: true
+      - key: JWT_SECRET
+        sync: false
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 10000
       - key: FRONTEND_URL
         value: https://snapvault-moau.onrender.com
-
-
+      - key: CLIENT_URL
+        value: https://snapvault-moau.onrender.com
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: CLOUDINARY_AUTH_TOKEN_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: FROM_EMAIL
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_CALLBACK_URL
+        sync: false
+      - key: GOOGLE_CALL_URL
+        sync: false
+      - key: STORAGE_QUOTA_BYTES
+        sync: false
