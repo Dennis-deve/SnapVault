@@ -361,4 +361,31 @@ describe("POST /api/upload", () => {
     expect(fakeStorage.media.size).toBe(1);
     expect(res.body.filename).toBe("only-public.jpg");
   });
+
+  it("handles top-level Cloudinary error shape {message, http_code, name} (no wrapped .error)", async () => {
+    // Real-world case from screenshot: keys message,http_code,name
+    mocks.upload.mockImplementation((file: unknown, _opts: unknown, cb: (r: unknown) => void) => {
+      cb({
+        message: "File size too large",
+        http_code: 400,
+        name: "BadRequest",
+      });
+    });
+
+    const app = await buildTestApp();
+    const agent = request.agent(app);
+    await agent.post("/api/auth/signup").send({
+      email: "toplevel-error@example.com",
+      password: "correct-horse-battery",
+    });
+
+    const res = await agent
+      .post("/api/upload")
+      .attach("file", tinyJpeg, "big.jpg");
+
+    expect(res.status).toBe(502);
+    expect(res.body.message).toContain("File size too large");
+    // Should have retried once
+    expect(mocks.upload).toHaveBeenCalledTimes(2);
+  });
 });
