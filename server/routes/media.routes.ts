@@ -78,11 +78,27 @@ export function registerMediaRoutes(app: Express) {
 
       const { albumId } = req.body;
 
-      // Verify album belongs to user if albumId is provided
+      // Verify album belongs to user if albumId is provided.
+      //
+      // These are TWO different failures and must return different codes —
+      // collapsing them into one bare 403 "Forbidden" made real incidents
+      // undiagnosable (a stale album URL after a DB reset looks identical
+      // to "you don't own this album"):
+      //   - albumId doesn't exist (deleted album, stale bookmark/URL after
+      //     a database reset/redeploy)  -> 404
+      //   - album exists but is owned by a different account -> 403
       if (albumId) {
         const album = await storage.getAlbum(albumId);
-        if (!album || album.userId !== req.user!.id) {
-          return res.status(403).json({ message: "Forbidden" });
+        if (!album) {
+          return res.status(404).json({ message: "Album not found" });
+        }
+        if (album.userId !== req.user!.id) {
+          console.warn("[upload] rejected — album belongs to a different account", {
+            albumId,
+            albumOwnerId: album.userId,
+            authenticatedUserId: req.user!.id,
+          });
+          return res.status(403).json({ message: "You can only upload to albums you own" });
         }
       }
 
@@ -143,11 +159,15 @@ export function registerMediaRoutes(app: Express) {
     try {
       const mediaData = insertMediaSchema.parse(req.body);
 
-      // Verify album belongs to user if albumId is provided
+      // Same 404-vs-403 split as /api/upload (see there for rationale):
+      // missing album -> 404, foreign album -> 403.
       if (mediaData.albumId) {
         const album = await storage.getAlbum(mediaData.albumId);
-        if (!album || album.userId !== req.user!.id) {
-          return res.status(403).json({ message: "Forbidden" });
+        if (!album) {
+          return res.status(404).json({ message: "Album not found" });
+        }
+        if (album.userId !== req.user!.id) {
+          return res.status(403).json({ message: "You can only upload to albums you own" });
         }
       }
 
@@ -242,8 +262,11 @@ export function registerMediaRoutes(app: Express) {
       }
 
       const targetAlbum = await storage.getAlbum(targetAlbumId);
-      if (!targetAlbum || targetAlbum.userId !== req.user!.id) {
-        return res.status(403).json({ message: "Forbidden" });
+      if (!targetAlbum) {
+        return res.status(404).json({ message: "Album not found" });
+      }
+      if (targetAlbum.userId !== req.user!.id) {
+        return res.status(403).json({ message: "You can only move media to albums you own" });
       }
 
       const ownedItems = await storage.getMediaByIds(ids, req.user!.id);
