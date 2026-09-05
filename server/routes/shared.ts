@@ -298,7 +298,14 @@ export async function uploadToCloudinary(
           // rejected as a failure (the client saw a 500 on every upload) and
           // every real Cloudinary error (including a 403 from Cloudinary itself)
           // was swallowed into a generic 500 with no details.
+          //
+          // REAL WORLD: we have also seen Cloudinary return a TOP-LEVEL error
+          // shape { message, http_code, name } without a wrapping .error
+          // (keys: message,http_code,name) — this was surfacing as
+          // "missing secure_url/url" instead of the real Cloudinary message.
+          // Handle both shapes.
           const callback = (res: any) => {
+            // Shape 1: { error: { message, http_code, ... } }
             if (res && res.error) {
               const diagnosis = diagnoseCloudinaryError(res.error);
               const baseMsg = res.error.message || "unknown error";
@@ -312,17 +319,62 @@ export async function uploadToCloudinary(
               // Extra structured log for Render — makes misconfig visible without leaking secrets
               console.error("[cloudinary] upload error", {
                 attempt,
+                shape: "wrapped.error",
                 message: baseMsg,
                 http_code: res.error.http_code ?? null,
+                name: res.error.name ?? null,
                 diagnosis,
                 env: getCloudinaryEnvStatus(),
                 filename,
                 resourceType,
               });
               reject(cloudinaryError);
-            } else {
-              resolve(res);
+              return;
             }
+
+            // Shape 2: top-level error { message, http_code, name } without secure_url/public_id/url
+            // This is what the user screenshot shows: keys message,http_code,name
+            if (res && typeof res.message === "string" && (typeof res.http_code === "number" || typeof res.name === "string") && !res.secure_url && !res.url && !res.public_id) {
+              const diagnosis = diagnoseCloudinaryError(res);
+              const baseMsg = res.message || "unknown error";
+              const httpPart = typeof res.http_code === "number" ? ` (Cloudinary HTTP ${res.http_code})` : "";
+              const diagPart = diagnosis ? ` - ${diagnosis}` : "";
+              const cloudinaryError: any = new Error(`Cloudinary upload failed: ${baseMsg}${httpPart}${diagPart}`);
+              cloudinaryError.status = 502;
+              cloudinaryError.cloudinaryHttpCode = res.http_code ?? null;
+              cloudinaryError.cloudinaryRawMessage = baseMsg;
+              cloudinaryError.diagnosis = diagnosis;
+              console.error("[cloudinary] upload error", {
+                attempt,
+                shape: "top-level",
+                message: baseMsg,
+                http_code: res.http_code ?? null,
+                name: res.name ?? null,
+                diagnosis,
+                env: getCloudinaryEnvStatus(),
+                filename,
+                resourceType,
+                keys: Object.keys(res).slice(0, 20),
+              });
+              reject(cloudinaryError);
+              return;
+            }
+
+            // Shape 3: null/undefined or empty
+            if (!res || typeof res !== "object") {
+              const cloudinaryError: any = new Error(`Cloudinary upload returned empty response - ${getCloudinaryEnvStatus()}`);
+              cloudinaryError.status = 502;
+              console.error("[cloudinary] empty response", {
+                attempt,
+                res,
+                env: getCloudinaryEnvStatus(),
+                filename,
+              });
+              reject(cloudinaryError);
+              return;
+            }
+
+            resolve(res);
           };
 
           if (resourceType === 'video') {
