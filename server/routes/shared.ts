@@ -175,6 +175,57 @@ export function setupHealthCheck(app: Express) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Cloudinary error self-diagnosis helpers (new in 6458d17)
+// ---------------------------------------------------------------------------
+
+/**
+ * Inspect a Cloudinary error object and return a human-actionable hint about
+ * which env var or config is likely wrong. This makes 502s self-diagnosing
+ * in Render logs and in the client-visible message, instead of a generic
+ * "Cloudinary upload failed".
+ */
+export function diagnoseCloudinaryError(err: { message?: string; http_code?: number }): string {
+  const raw = (err.message || "").toLowerCase();
+  const code = err.http_code;
+
+  // Most specific first — these substrings appear verbatim in Cloudinary
+  // error messages for misconfigured credentials.
+  if (raw.includes("api_key") || raw.includes("api key") || raw.includes("invalid api key") || raw.includes("unknown api key") || raw.includes("must supply api_key")) {
+    return "Check CLOUDINARY_API_KEY - it appears invalid, unknown, or missing";
+  }
+  if (raw.includes("cloud_name") || raw.includes("cloud name") || raw.includes("unknown cloud") || raw.includes("invalid cloud") || raw.includes("unknown account") || raw.includes("account not found")) {
+    return "Check CLOUDINARY_CLOUD_NAME - it appears invalid or unknown (unknown account)";
+  }
+  if (raw.includes("api_secret") || raw.includes("invalid signature") || raw.includes("signature") || raw.includes("authentication")) {
+    return "Check CLOUDINARY_API_SECRET - signature verification failed";
+  }
+  if (raw.includes("rate limit") || raw.includes("too many requests")) {
+    return "Rate limited by Cloudinary - retry after a moment";
+  }
+  if (raw.includes("file size") || raw.includes("too large") || raw.includes("payload too large")) {
+    return "File too large for Cloudinary plan - check size limits";
+  }
+
+  // Fallback to http_code based hints
+  if (code === 401) return "Authentication failed - verify CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET";
+  if (code === 403) return "Permission denied by Cloudinary - check account permissions, plan limits, and credentials";
+  if (code === 404) return "Cloudinary resource or cloud not found - verify CLOUDINARY_CLOUD_NAME";
+  if (code === 429) return "Rate limited by Cloudinary - retry after a moment";
+  if (code && code >= 500) return "Cloudinary service error - transient, retry may help";
+
+  return "";
+}
+
+function getCloudinaryEnvStatus(): string {
+  const present = {
+    cloud_name: !!process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: !!process.env.CLOUDINARY_API_KEY,
+    api_secret: !!process.env.CLOUDINARY_API_SECRET,
+  };
+  return `env present cloud_name=${present.cloud_name} api_key=${present.api_key} api_secret=${present.api_secret}`;
+}
+
 // Helper function to upload a file already on disk (see multer diskStorage
 // above) to Cloudinary, and remove the temp file once Cloudinary is done
 // with it — win or lose.
@@ -190,6 +241,13 @@ export function setupHealthCheck(app: Express) {
 // Images are small enough that a plain upload is fine and avoids the
 // chunking overhead.
 const CHUNK_SIZE_BYTES = 6 * 1024 * 1024; // 6MB chunks
+
+type CloudinarySuccess = {
+  secure_url?: string;
+  url?: string;
+  public_id?: string;
+  [key: string]: any;
+};
 
 export async function uploadToCloudinary(
   filePath: string,
@@ -221,49 +279,112 @@ export async function uploadToCloudinary(
     uploadOptions.chunk_size = CHUNK_SIZE_BYTES;
   }
 
+  // One retry: Cloudinary can transiently 5xx or drop a chunked upload on
+  // flaky mobile networks. We retry exactly once, then surface the final
+  // error with self-diagnosing details. Temp file cleanup happens after
+  // all attempts so the second attempt still has the file.
+  let lastError: any = null;
+
   try {
-    const result = await new Promise<{ secure_url: string; public_id: string }>((resolve, reject) => {
-      // IMPORTANT: the Cloudinary v2.x SDK invokes the uploader callback with
-      // a SINGLE argument — the result object — not the old (error, result)
-      // two-argument style. On success it's the plain result
-      // ({ secure_url, public_id, ... }); on failure it carries an `.error`
-      // field ({ message, http_code, ... }). Treating the first argument as
-      // "the error" (as the old code did) meant every SUCCESSFUL upload was
-      // rejected as a failure (the client saw a 500 on every upload) and
-      // every real Cloudinary error (including a 403 from Cloudinary itself)
-      // was swallowed into a generic 500 with no details.
-      const callback = (res: any) => {
-        if (res && res.error) {
-          const cloudinaryError: any = new Error(
-            `Cloudinary upload failed: ${res.error.message || "unknown error"}` +
-              (typeof res.error.http_code === "number" ? ` (Cloudinary HTTP ${res.error.http_code})` : "")
-          );
-          // Upstream storage failure: report it as 502 so the client knows
-          // the file was received by SnapVault but the storage backend
-          // rejected it — NOT as a 4xx, which the client reads as
-          // "you're not allowed to do this".
-          cloudinaryError.status = 502;
-          cloudinaryError.cloudinaryHttpCode = res.error.http_code ?? null;
-          reject(cloudinaryError);
-        } else {
-          resolve(res);
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const result = await new Promise<CloudinarySuccess>((resolve, reject) => {
+          // IMPORTANT: the Cloudinary v2.x SDK invokes the uploader callback with
+          // a SINGLE argument — the result object — not the old (error, result)
+          // two-argument style. On success it's the plain result
+          // ({ secure_url, public_id, ... }); on failure it carries an `.error`
+          // field ({ message, http_code, ... }). Treating the first argument as
+          // "the error" (as the old code did) meant every SUCCESSFUL upload was
+          // rejected as a failure (the client saw a 500 on every upload) and
+          // every real Cloudinary error (including a 403 from Cloudinary itself)
+          // was swallowed into a generic 500 with no details.
+          const callback = (res: any) => {
+            if (res && res.error) {
+              const diagnosis = diagnoseCloudinaryError(res.error);
+              const baseMsg = res.error.message || "unknown error";
+              const httpPart = typeof res.error.http_code === "number" ? ` (Cloudinary HTTP ${res.error.http_code})` : "";
+              const diagPart = diagnosis ? ` - ${diagnosis}` : "";
+              const cloudinaryError: any = new Error(`Cloudinary upload failed: ${baseMsg}${httpPart}${diagPart}`);
+              cloudinaryError.status = 502;
+              cloudinaryError.cloudinaryHttpCode = res.error.http_code ?? null;
+              cloudinaryError.cloudinaryRawMessage = baseMsg;
+              cloudinaryError.diagnosis = diagnosis;
+              // Extra structured log for Render — makes misconfig visible without leaking secrets
+              console.error("[cloudinary] upload error", {
+                attempt,
+                message: baseMsg,
+                http_code: res.error.http_code ?? null,
+                diagnosis,
+                env: getCloudinaryEnvStatus(),
+                filename,
+                resourceType,
+              });
+              reject(cloudinaryError);
+            } else {
+              resolve(res);
+            }
+          };
+
+          if (resourceType === 'video') {
+            cloudinary.uploader.upload_large(filePath, uploadOptions, callback);
+          } else {
+            cloudinary.uploader.upload(filePath, uploadOptions, callback);
+          }
+        });
+
+        // secure_url fallback: some Cloudinary responses (or older SDK
+        // versions) may return `url` instead of `secure_url`. Accept either,
+        // preferring secure_url. This prevents a false 502 when the upload
+        // actually succeeded but used the non-secure field.
+        const effectiveUrl = (result as any).secure_url || (result as any).url;
+        const publicId = (result as any).public_id;
+
+        if (!effectiveUrl || !publicId) {
+          const missing = new Error(
+            `Cloudinary upload returned an unexpected response (missing ${!effectiveUrl ? "secure_url/url" : "public_id"}) - ${getCloudinaryEnvStatus()}`
+          ) as any;
+          missing.status = 502;
+          console.error("[cloudinary] unexpected response shape", {
+            attempt,
+            hasSecureUrl: !!(result as any).secure_url,
+            hasUrl: !!(result as any).url,
+            hasPublicId: !!publicId,
+            env: getCloudinaryEnvStatus(),
+          });
+          throw missing;
         }
-      };
 
-      if (resourceType === 'video') {
-        cloudinary.uploader.upload_large(filePath, uploadOptions, callback);
-      } else {
-        cloudinary.uploader.upload(filePath, uploadOptions, callback);
+        if (!(result as any).secure_url && (result as any).url) {
+          console.warn("[cloudinary] secure_url missing, fell back to url", {
+            attempt,
+            filename,
+            url: (result as any).url,
+          });
+        }
+
+        return { url: effectiveUrl, publicId, resourceType };
+      } catch (err: any) {
+        lastError = err;
+        // If this was the first attempt, retry once regardless of code —
+        // transient network hiccups can happen even on auth errors (e.g. DNS),
+        // and a single retry is cheap. Log the retry.
+        if (attempt === 1) {
+          console.warn("[cloudinary] upload attempt 1 failed, retrying once", {
+            message: err?.message,
+            http_code: err?.cloudinaryHttpCode ?? null,
+            diagnosis: err?.diagnosis ?? null,
+            filename,
+          });
+          // Small delay not required but helps for rate-limit 429
+          // Keep it synchronous for test determinism — no actual sleep.
+          continue;
+        }
+        // Second attempt also failed — give up and propagate
+        throw err;
       }
-    });
-
-    if (!result || !result.secure_url || !result.public_id) {
-      const missing = new Error("Cloudinary upload returned an unexpected response (missing secure_url/public_id)") as any;
-      missing.status = 502;
-      throw missing;
     }
-
-    return { url: result.secure_url, publicId: result.public_id, resourceType };
+    // Should be unreachable — loop either returns or throws
+    throw lastError;
   } finally {
     // Runs whether the upload succeeded or failed — the temp file has no
     // further use either way. Awaited so the file is guaranteed gone by
