@@ -223,9 +223,31 @@ export async function uploadToCloudinary(
 
   try {
     const result = await new Promise<{ secure_url: string; public_id: string }>((resolve, reject) => {
-      const callback = (error: any, result: any) => {
-        if (error) reject(error);
-        else resolve(result);
+      // IMPORTANT: the Cloudinary v2.x SDK invokes the uploader callback with
+      // a SINGLE argument — the result object — not the old (error, result)
+      // two-argument style. On success it's the plain result
+      // ({ secure_url, public_id, ... }); on failure it carries an `.error`
+      // field ({ message, http_code, ... }). Treating the first argument as
+      // "the error" (as the old code did) meant every SUCCESSFUL upload was
+      // rejected as a failure (the client saw a 500 on every upload) and
+      // every real Cloudinary error (including a 403 from Cloudinary itself)
+      // was swallowed into a generic 500 with no details.
+      const callback = (res: any) => {
+        if (res && res.error) {
+          const cloudinaryError: any = new Error(
+            `Cloudinary upload failed: ${res.error.message || "unknown error"}` +
+              (typeof res.error.http_code === "number" ? ` (Cloudinary HTTP ${res.error.http_code})` : "")
+          );
+          // Upstream storage failure: report it as 502 so the client knows
+          // the file was received by SnapVault but the storage backend
+          // rejected it — NOT as a 4xx, which the client reads as
+          // "you're not allowed to do this".
+          cloudinaryError.status = 502;
+          cloudinaryError.cloudinaryHttpCode = res.error.http_code ?? null;
+          reject(cloudinaryError);
+        } else {
+          resolve(res);
+        }
       };
 
       if (resourceType === 'video') {
@@ -234,6 +256,12 @@ export async function uploadToCloudinary(
         cloudinary.uploader.upload(filePath, uploadOptions, callback);
       }
     });
+
+    if (!result || !result.secure_url || !result.public_id) {
+      const missing = new Error("Cloudinary upload returned an unexpected response (missing secure_url/public_id)") as any;
+      missing.status = 502;
+      throw missing;
+    }
 
     return { url: result.secure_url, publicId: result.public_id, resourceType };
   } finally {

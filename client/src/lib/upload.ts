@@ -87,6 +87,50 @@ async function compressImage(file: File): Promise<File> {
 }
 
 /**
+ * Turn a failed upload response into a message a human can act on. The
+ * server's JSON `message` is the source of truth when it's present; the
+ * status-code mappings below add context for the codes that historically
+ * meant very different things but were all shown as a bare "403 Forbidden".
+ */
+function describeUploadError(status: number, bodyText: string): string {
+  let serverMessage = "";
+  try {
+    const parsed = JSON.parse(bodyText);
+    if (parsed && typeof parsed.message === "string" && parsed.message) {
+      serverMessage = parsed.message;
+    }
+  } catch {
+    // Non-JSON body (e.g. an HTML error page from a proxy) — fall through.
+  }
+
+  const fallback = `Upload failed (error code ${status})`;
+  if (status === 401) {
+    return "Your session expired. Please log in again and try the upload.";
+  }
+  if (status === 403) {
+    // Distinguish the two real 403s so the user knows which one hit.
+    if (serverMessage.includes("albums you own")) {
+      return "This album belongs to a different account. Log out, log back in, and make sure you're uploading to an album from THIS account.";
+    }
+    return serverMessage || "You aren't allowed to upload to this album.";
+  }
+  if (status === 404) {
+    return serverMessage || "That album no longer exists (it may have been deleted). Go back to your albums and pick a different one.";
+  }
+  if (status === 413) {
+    return "That file is too large to upload.";
+  }
+  if (status === 502) {
+    // Cloudinary (the storage backend) rejected it — surface its reason.
+    return serverMessage || "The photo/video storage is temporarily unavailable. Please try again in a moment.";
+  }
+  if (status >= 500) {
+    return serverMessage || "The server hit a problem while uploading. Please try again.";
+  }
+  return serverMessage || fallback;
+}
+
+/**
  * Upload a file with proper authentication (Bearer Token & session cookie)
  * Works reliably on all desktop & mobile browsers (including iPhone 7 Plus)
  */
@@ -122,7 +166,7 @@ export async function uploadFile(
           resolve(xhr.responseText);
         }
       } else {
-        reject(new Error(`Upload failed (${xhr.status}): ${xhr.responseText}`));
+        reject(new Error(describeUploadError(xhr.status, xhr.responseText)));
       }
     });
 

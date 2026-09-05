@@ -1,5 +1,61 @@
 # What changed, and how to push it
 
+## 0. Upload returning 403 / failing (root-cause fix)
+
+Two real bugs were found in the upload path. Both are now fixed.
+
+**Bug A — the Cloudinary callback was misread (this made uploads fail).**
+`server/routes/shared.ts` wrapped the Cloudinary uploader callback with the
+old two-argument `(error, result)` signature. The Cloudinary **v2.x** SDK
+invokes that callback with a **single** argument — the result object — where
+a failure carries an `.error` field *inside* it. So the success result was
+being treated as the "error" argument and rejected: **every successful upload
+came back as a failure**, and any genuine Cloudinary error (including a 403
+from Cloudinary itself) was swallowed into a bare 500 with no details.
+`uploadToCloudinary()` now reads the single-argument result correctly, and a
+real Cloudinary failure is surfaced to the client as a 502 whose message
+includes Cloudinary's actual reason (e.g. `Cloudinary upload failed: Unknown
+account (Cloudinary HTTP 403)`), so storage misconfiguration is visible
+instead of a generic error.
+
+**Bug B — "album not found" and "not your album" were both 403.**
+`POST /api/upload` (plus the legacy `/api/media` and `batch-move`) collapsed
+two different failures into one bare `403 Forbidden`: the `albumId` not
+existing in the database (a deleted album, or a stale bookmark/URL after a
+database reset/redeploy) looked identical to "this album belongs to someone
+else." That is exactly the undiagnosable 403 you were seeing. They are now
+split: missing album → **404 "Album not found"**, foreign album → **403
+"You can only upload to albums you own"** (and the server logs which two user
+IDs disagreed, so the Render logs tell you which case fired).
+
+**Client:** `client/src/lib/upload.ts` now turns the server's response into a
+readable, actionable message per status code (expired session, wrong account,
+album gone, file too large, storage unavailable) instead of dumping the raw
+body.
+
+**Tests:** `server/__tests__/upload.test.ts` (new) locks in the single-arg
+Cloudinary callback contract (image + video), the Cloudinary-error→502
+mapping, and the 404-vs-403 split. `testApp.ts` now installs the same terminal
+error handler as production so route errors surface as JSON in tests.
+
+**What to do when you redeploy:**
+1. Push this branch and merge it, so Render rebuilds the `snapvault-api`
+   service.
+2. Retry an upload from an album that exists in your *current* account.
+   - If it succeeds — done.
+   - If you now get a clear **404** — that album no longer exists in the
+     database (common after a DB reset). Go back to your album list, pick a
+     live album, and retry.
+   - If you get a **502** naming Cloudinary (e.g. "Unknown account",
+     "Invalid API Key", "Insufficient permissions") — the Cloudinary
+     credentials/plan in the Render env vars need attention
+     (`CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET`).
+   - If you get **403 "You can only upload to albums you own"** — you're
+     logged in as a different account than the one that owns the album; log
+     out and log back in as the right one.
+
+---
+
 ## 1. Large mobile video uploads (reliability fix)
 
 **Before:** `multer.memoryStorage()` loaded an entire uploaded file into a
