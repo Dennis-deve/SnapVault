@@ -1,7 +1,8 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "./queryClient";
+import { apiRequest, queryClient } from "./queryClient";
 import { getApiUrl } from "./api";
+import { clearAllAlbumUnlockTokens } from "./albumUnlock";
 
 interface User {
   id: string;
@@ -66,22 +67,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function login(email: string, password: string) {
     const data = await apiRequest("/api/auth/login", {
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
     });
     if (data?.token) {
       localStorage.setItem("auth_token", data.token);
     }
+    // Account switch hygiene: nothing cached for the previous account may
+    // survive into this one — media, albums, search results, and any
+    // album-unlock tokens all belong to whoever was signed in before.
+    queryClient.clear();
+    clearAllAlbumUnlockTokens();
     setUser(data);
   }
 
   async function signup(email: string, password: string, pin?: string) {
     const data = await apiRequest("/api/auth/signup", {
       method: "POST",
-      body: JSON.stringify({ email, password, pin: pin || null }),
+      body: JSON.stringify({ email: email.trim().toLowerCase(), password, pin: pin || null }),
     });
     if (data?.token) {
       localStorage.setItem("auth_token", data.token);
     }
+    queryClient.clear();
+    clearAllAlbumUnlockTokens();
     setUser(data);
   }
 
@@ -92,6 +100,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
     } finally {
       localStorage.removeItem("auth_token");
+      // Clear the prior account's cached media/albums/searches and its
+      // album-unlock tokens, so the next account (or logged-out visitor)
+      // never sees any of it.
+      queryClient.clear();
+      clearAllAlbumUnlockTokens();
       setUser(null);
     }
   }

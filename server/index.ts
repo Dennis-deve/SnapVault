@@ -80,7 +80,11 @@ const authLimiter = rateLimit({
 
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // 100 requests per window
+  // Generous per-IP ceiling that still blunts abuse: ordinary app usage makes
+  // many API calls per minute (media lists, album opens, favorites, debounced
+  // search keystrokes), so a triple-digit cap would throttle legitimate users
+  // mid-session. Search is additionally debounced and cancellable client-side.
+  max: 1000, // 1000 requests per window
   message: "Too many requests, please slow down",
   standardHeaders: true,
   legacyHeaders: false,

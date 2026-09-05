@@ -7,7 +7,7 @@ import { insertUserSchema, insertEmailChangeTokenSchema } from "@shared/schema";
 import { z } from "zod";
 import { generateToken } from "../jwt";
 import { isGoogleAuthConfigured } from "../auth";
-import { sendEmailChangeVerification, sendPasswordResetEmail, sendWelcomeEmail } from "../email";
+import { sendEmailChangeVerification, sendPasswordResetEmail, sendWelcomeEmail, isEmailConfigured } from "../email";
 import { deleteFromCloudinary } from "./shared";
 import {
   authLimiter,
@@ -18,8 +18,25 @@ import {
 } from "./shared";
 
 export function registerAuthRoutes(app: Express) {
-  const getAppBaseUrl = (req: Request) =>
-    process.env.CLIENT_URL || process.env.FRONTEND_URL || `${req.protocol}://${req.get("host")}`;
+  // Links handed to users (reset emails, share links, OAuth redirects) must
+  // point at the configured frontend. In production the request's own Host
+  // header is attacker-controllable and is therefore NEVER used as a
+  // fallback; if neither CLIENT_URL nor FRONTEND_URL is set in production
+  // the caller reports a configuration error instead of building a link to
+  // whatever host the request claims to come from.
+  const getConfiguredAppBaseUrl = (): string | null => {
+    const configured = process.env.CLIENT_URL || process.env.FRONTEND_URL;
+    if (configured) return configured.replace(/\/$/, "");
+    if (process.env.NODE_ENV === "production") return null;
+    return null;
+  };
+
+  const getAppBaseUrl = (req: Request): string | null => {
+    const configured = getConfiguredAppBaseUrl();
+    if (configured) return configured;
+    // Development only: same-origin monolithic dev server.
+    return `${req.protocol}://${req.get("host")}`;
+  };
 
   app.post("/api/auth/signup", authLimiter, async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -47,7 +64,10 @@ export function registerAuthRoutes(app: Express) {
       });
 
       const baseUrl = getAppBaseUrl(req);
-      const appUrl = `${baseUrl.replace(/\/$/, "")}/`;
+      if (!baseUrl) {
+        console.warn("[signup] CLIENT_URL/FRONTEND_URL not set; skipping welcome email link.");
+      }
+      const appUrl = baseUrl ? `${baseUrl.replace(/\/$/, "")}/` : "/";
 
       const welcomeEmailResult = await sendWelcomeEmail({
         to: user.email,
@@ -59,8 +79,10 @@ export function registerAuthRoutes(app: Express) {
         console.warn("Welcome email was not sent:", welcomeEmailResult.error);
       }
 
-      // Generate JWT token for mobile compatibility
-      const token = generateToken(user.id);
+      // Generate JWT token for mobile compatibility. Pass the full user
+      // row so the token carries the credential version that later
+      // invalidates it when the password changes (see server/jwt.ts).
+      const token = generateToken(user);
 
       // Log in the user (for session-based auth)
       req.login(user, (err: any) => {
@@ -101,8 +123,10 @@ export function registerAuthRoutes(app: Express) {
 
       if (email) clearFailedLogins(email);
 
-      // Generate JWT token for mobile compatibility
-      const token = generateToken(user.id);
+      // Generate JWT token for mobile compatibility. Pass the full user
+      // row so the token carries the credential version that later
+      // invalidates it when the password changes (see server/jwt.ts).
+      const token = generateToken(user);
 
       req.login(user, (loginErr: any) => {
         if (loginErr) return next(loginErr);
@@ -146,6 +170,12 @@ export function registerAuthRoutes(app: Express) {
         // password-reset emails; falls back to the request's own host for a
         // same-origin monolithic deployment.
         const baseUrl = getAppBaseUrl(req);
+        if (!baseUrl) {
+          console.error("[google-callback] CLIENT_URL/FRONTEND_URL not set; cannot redirect OAuth login.");
+          return res
+            .status(500)
+            .send("OAuth login is misconfigured on this server (no frontend URL set).");
+        }
 
         // SECURITY/RELIABILITY NOTE: this deployment runs the frontend and
         // API on two different domains (separate Render services). The
@@ -161,7 +191,7 @@ export function registerAuthRoutes(app: Express) {
         // to, so we pass it through the redirect URL instead. The client's
         // /auth/callback route reads it, stores it the same way the
         // login/signup flows do, then strips it from the URL immediately.
-        const token = generateToken(req.user!.id);
+        const token = generateToken(req.user!);
         const target = new URL(`${baseUrl.replace(/\/$/, "")}/auth/callback`);
         target.searchParams.set("token", token);
         res.redirect(target.toString());
@@ -259,7 +289,13 @@ export function registerAuthRoutes(app: Express) {
       await storage.updateUserPassword(req.user!.id, hashed);
       req.user!.password = hashed;
 
-      res.json({ message: "Password updated successfully" });
+      // Changing the password invalidates old JWTs via the embedded
+      // credential version (server/jwt.ts) — and every OTHER session
+      // cookie here as well. The current session is kept so the person
+      // changing their password isn't logged out mid-request.
+      await storage.destroySessionsForUser(req.user!.id, req.sessionID);
+
+      res.json({ message: "Password updated successfully. Other devices were signed out." });
     } catch (error) {
       next(error);
     }
@@ -298,6 +334,12 @@ export function registerAuthRoutes(app: Express) {
       await storage.createEmailChangeToken({ userId: req.user!.id, newEmail, token, expiresAt });
 
       const baseUrl = getAppBaseUrl(req);
+      if (!baseUrl) {
+        console.error("[change-email] CLIENT_URL/FRONTEND_URL not set; cannot build a verification link.");
+        return res.status(503).json({
+          message: "Email change links are misconfigured on this server (no frontend URL set).",
+        });
+      }
       const verifyUrl = `${baseUrl.replace(/\/$/, "")}/verify-email?token=${token}`;
 
       const result = await sendEmailChangeVerification({ to: newEmail, verifyUrl });
@@ -349,10 +391,11 @@ export function registerAuthRoutes(app: Express) {
     }
   });
 
-  // Global sharing kill switch (per-user). Individual albums still need
-  // their own "Share" toggle (POST /api/albums/:id/share) to actually
-  // generate a link — this just controls whether any share link works at
-  // all, so it can be flipped off to instantly revoke every link at once.
+  // Global sharing kill switch (per-user). Turning it OFF permanently
+  // revokes every share link on the account: each album's token is
+  // destroyed (not merely disabled), so turning the preference back ON can
+  // never resurrect a link that was previously handed out. Albums must be
+  // explicitly shared again to get fresh links.
   app.post("/api/auth/sharing-preference", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { enabled } = req.body;
@@ -360,6 +403,10 @@ export function registerAuthRoutes(app: Express) {
         return res.status(400).json({ message: "enabled must be a boolean" });
       }
       await storage.setPublicSharingEnabled(req.user!.id, enabled);
+      if (!enabled) {
+        // Destroy every album share token on the account in one statement.
+        await storage.revokeAllAlbumSharesForUser(req.user!.id);
+      }
       req.user!.publicSharingEnabled = enabled ? 1 : 0;
       res.json({ publicSharingEnabled: enabled });
     } catch (error) {
@@ -367,14 +414,32 @@ export function registerAuthRoutes(app: Express) {
     }
   });
 
-  // Forgot password - request reset token
+  // Forgot password - request a reset link.
+  //
+  // Security properties (see FEATURE_FIXES.md):
+  //   * The email is normalized (trim + lowercase) and looked up
+  //     case-insensitively, so addresses created before normalization
+  //     existed are still found.
+  //   * The raw token is 256 bits of CSPRNG output (base64url). Only its
+  //     SHA-256 hash is stored; a database leak therefore cannot be turned
+  //     into valid reset links.
+  //   * Issuing a new link deletes the previous one for the account.
+  //   * The link always uses the CONFIGURED frontend URL. The production
+  //     Host header is never trusted.
+  //   * The raw token is never returned in a response nor logged.
+  //   * Missing email configuration is an honest 503 for everyone; a
+  //     provider rejection AFTER acceptance semantics is logged
+  //     server-side only, so public responses can't be used to probe which
+  //     addresses have accounts.
   app.post("/api/auth/forgot-password", authLimiter, async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { email } = req.body;
+      const rawEmail = typeof req.body?.email === "string" ? req.body.email : "";
 
-      if (!email) {
+      if (!rawEmail.trim()) {
         return res.status(400).json({ message: "Email is required" });
       }
+
+      const email = rawEmail.trim().toLowerCase();
 
       // Validate email format
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -382,71 +447,78 @@ export function registerAuthRoutes(app: Express) {
         return res.status(400).json({ message: "Invalid email format" });
       }
 
-      // Find user by email
+      // Honest failure when email can't be sent at all — checked BEFORE the
+      // user lookup so the 503 is identical whether or not the address
+      // exists (no enumeration through this branch either).
+      if (!isEmailConfigured()) {
+        return res.status(503).json({
+          message:
+            "Password reset emails are not configured on this server. Set RESEND_API_KEY (and a verified FROM_EMAIL) to enable them.",
+        });
+      }
+
+      // Case-insensitive lookup — matches normalized and legacy mixed-case rows.
       const user = await storage.getUserByEmail(email);
 
-      // Always return success even if user doesn't exist (security best practice)
-      // This prevents email enumeration attacks
+      // Always return success even if user doesn't exist (security best
+      // practice: prevents email enumeration attacks).
       if (!user) {
         return res.json({
           message: "If an account exists with this email, you will receive a password reset link."
         });
       }
 
-      // Generate secure random token
-      const resetToken = crypto.randomBytes(32).toString('hex');
+      // Google-only accounts have no password to reset.
+      if (!user.password && !user.googleId) {
+        return res.json({
+          message: "If an account exists with this email, you will receive a password reset link."
+        });
+      }
 
-      // Token expires in 1 hour
-      const expiresAt = new Date();
-      expiresAt.setHours(expiresAt.getHours() + 1);
+      // Cryptographically random, URL-safe token. Kept in memory only.
+      const resetToken = crypto.randomBytes(32).toString("base64url");
 
-      // Delete any existing tokens for this user, plus opportunistically
-      // prune expired tokens for everyone else.
+      // Token expires in 1 hour.
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+      // A new link invalidates any previous one for this account, plus
+      // opportunistically prune expired tokens for everyone.
       await storage.deleteTokensForUser(user.id);
       await storage.deleteExpiredTokens();
 
-      // Save token to database
+      // Store only the SHA-256 hash of the token.
+      const tokenHash = crypto.createHash("sha256").update(resetToken).digest("hex");
       await storage.createPasswordResetToken({
         userId: user.id,
-        token: resetToken,
+        token: tokenHash,
         expiresAt,
       });
 
-      // Build reset URL - use CLIENT_URL from env or fall back to request host
       const baseUrl = getAppBaseUrl(req);
+      if (!baseUrl) {
+        // Production without a configured frontend URL: refuse to invent a
+        // link from the request's Host header.
+        console.error("[auth] CLIENT_URL/FRONTEND_URL is not set; cannot build a password reset link.");
+        return res.status(503).json({
+          message: "Password reset links are misconfigured on this server (no frontend URL set)."
+        });
+      }
       const resetUrl = `${baseUrl}/reset-password?token=${resetToken}`;
-
-      console.log('Attempting to send password reset email to:', user.email);
-      console.log('Reset URL:', resetUrl);
 
       const emailResult = await sendPasswordResetEmail({
         to: user.email,
         resetUrl,
-        userName: user.email.split('@')[0], // Use email username as display name
+        userName: user.email.split("@")[0],
       });
 
-      // Log email result for debugging
       if (!emailResult.success) {
-        console.error('Email sending failed:', emailResult.error);
-        // In development, show the error to help debug
-        if (process.env.NODE_ENV !== 'production') {
-          return res.status(500).json({
-            message: "Failed to send reset email",
-            error: emailResult.error,
-            resetUrl: resetUrl // Include reset URL in dev mode
-          });
-        }
-      } else {
-        console.log('Password reset email sent successfully');
+        // Recipient/provider-specific failures are logged server-side only.
+        // The public response stays generic so it can't be used to tell
+        // which addresses have accounts (an attacker who probes addresses
+        // would otherwise learn "this one exists but Resend bounced it").
+        console.error("[auth] password reset email not delivered:", emailResult.error);
       }
 
-      // In development, also log to console
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('Password reset requested for:', email);
-        console.log('Email result:', emailResult);
-      }
-
-      // Always return success to prevent email enumeration
       res.json({
         message: "If an account exists with this email, you will receive a password reset link.",
       });
@@ -456,42 +528,66 @@ export function registerAuthRoutes(app: Express) {
     }
   });
 
-  // Reset password with token
+  // Link check for the reset page: is this token still usable? Lets the
+  // page explain "expired" vs "invalid/already used" BEFORE the user types
+  // a new password. Never echoes the token back.
+  app.get("/api/auth/reset-password/validate", authLimiter, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const raw = typeof req.query.token === "string" ? req.query.token : "";
+      if (!raw) {
+        return res.json({ valid: false, reason: "invalid" });
+      }
+      const tokenHash = crypto.createHash("sha256").update(raw).digest("hex");
+      const row = await storage.getPasswordResetToken(tokenHash);
+      if (!row) {
+        return res.json({ valid: false, reason: "invalid" });
+      }
+      if (row.expiresAt.getTime() <= Date.now()) {
+        return res.json({ valid: false, reason: "expired" });
+      }
+      res.json({ valid: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Reset password with token. Single use, transactional: consuming the
+  // token, updating the password and destroying the user's sessions all
+  // happen atomically (see DBStorage.consumePasswordResetTokenAndSetPassword).
+  // Old JWTs are invalidated by the credential-version check in server/jwt.ts.
   app.post("/api/auth/reset-password", authLimiter, async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { token, newPassword } = req.body;
+      const { token, newPassword } = req.body as { token?: string; newPassword?: string };
 
       if (!token || !newPassword) {
         return res.status(400).json({ message: "Token and new password are required" });
       }
 
-      if (newPassword.length < 8) {
+      if (typeof newPassword !== "string" || newPassword.length < 8) {
         return res.status(400).json({ message: "Password must be at least 8 characters" });
       }
 
-      // Find token in database
-      const resetToken = await storage.getPasswordResetToken(token);
-
-      if (!resetToken) {
-        return res.status(400).json({ message: "Invalid or expired reset token" });
-      }
-
-      // Check if token has expired
-      if (new Date() > resetToken.expiresAt) {
-        await storage.deletePasswordResetToken(token);
-        return res.status(400).json({ message: "Reset token has expired. Please request a new one." });
-      }
-
-      // Hash new password
+      const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
       const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-      // Update user's password
-      await storage.updateUserPassword(resetToken.userId, hashedPassword);
+      const result = await storage.consumePasswordResetTokenAndSetPassword(tokenHash, hashedPassword);
 
-      // Delete used token
-      await storage.deletePasswordResetToken(token);
+      if (!result.ok) {
+        if (result.reason === "expired") {
+          return res.status(400).json({
+            message: "This reset link has expired. Please request a new one.",
+            reason: "expired",
+          });
+        }
+        return res.status(400).json({
+          message: "This reset link is invalid or has already been used. Please request a new one.",
+          reason: "invalid",
+        });
+      }
 
-      res.json({ message: "Password successfully reset. You can now log in with your new password." });
+      res.json({
+        message: "Password successfully reset. All previous logins were signed out — use your new password to sign in.",
+      });
     } catch (error) {
       next(error);
     }

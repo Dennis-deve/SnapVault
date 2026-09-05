@@ -13,9 +13,22 @@ function getResendClient(): Resend | null {
   return resend;
 }
 
-// Default sender email (you'll configure this in Resend dashboard)
+// Default sender email (you'll configure this in Resend dashboard).
+// NOTE: onboarding@resend.dev is Resend's sandbox sender — fine for
+// testing the account that owns the Resend project, but NOT a general
+// production sender. Production should set FROM_EMAIL to an address on a
+// domain verified in Resend (see FEATURE_FIXES.md).
 const FROM_EMAIL = process.env.FROM_EMAIL || 'onboarding@resend.dev';
 const FROM_NAME = 'SnapVault';
+
+/**
+ * True when outgoing email is actually possible: a Resend API key is set.
+ * Routes use this to return an honest 503 up front instead of accepting a
+ * reset request that can never be delivered.
+ */
+export function isEmailConfigured(): boolean {
+  return !!process.env.RESEND_API_KEY;
+}
 
 interface SendPasswordResetEmailParams {
   to: string;
@@ -72,8 +85,8 @@ export async function sendPasswordResetEmail({
     const client = getResendClient();
     
     if (!client) {
-      console.warn('RESEND_API_KEY not configured. Email not sent.');
-      console.log('Password reset URL:', resetUrl);
+      // SECURITY: never log the reset URL — it contains the raw token.
+      console.warn('RESEND_API_KEY not configured. Password reset email not sent.');
       return { success: false, error: 'Email service not configured' };
     }
 
@@ -89,6 +102,7 @@ export async function sendPasswordResetEmail({
       to: to, // Resend expects a string or array of strings
       subject: 'Reset Your SnapVault Password',
       html: getPasswordResetEmailTemplate(resetUrl, userName),
+      text: getPasswordResetEmailText(resetUrl, userName),
     });
 
     if (error) {
@@ -123,7 +137,6 @@ export async function sendWelcomeEmail({
 
     if (!client) {
       console.warn('RESEND_API_KEY not configured. Welcome email not sent.');
-      console.log('Welcome page URL:', appUrl);
       return { success: false, error: 'Email service not configured' };
     }
 
@@ -135,6 +148,7 @@ export async function sendWelcomeEmail({
       to,
       subject: 'Welcome to SnapVault',
       html: getWelcomeEmailTemplate(cleanAppUrl, userName),
+      text: getWelcomeEmailText(cleanAppUrl, userName),
     });
 
     if (error) {
@@ -498,4 +512,36 @@ function getEmailChangeVerificationTemplate(verifyUrl: string, userName: string)
 </body>
 </html>
   `.trim();
+}
+
+/**
+ * Plain-text alternative for the password reset email. Every email in this
+ * app ships both HTML and text so it stays readable in clients that
+ * disable HTML or strip it for security.
+ */
+function getPasswordResetEmailText(resetUrl: string, userName: string): string {
+  return [
+    `Hi ${userName},`,
+    '',
+    'We received a request to reset the password for your SnapVault account.',
+    'Open the link below to create a new password:',
+    '',
+    resetUrl,
+    '',
+    'This link expires in 1 hour and can only be used once.',
+    'If you didn\'t request this, you can safely ignore this email — your password stays unchanged.',
+    '',
+    '— SnapVault',
+  ].join('\n');
+}
+
+function getWelcomeEmailText(appUrl: string, userName: string): string {
+  return [
+    `Hi ${userName},`,
+    '',
+    'Welcome to SnapVault — your photos and videos, safely in the cloud.',
+    `Open the app to get started: ${appUrl}`,
+    '',
+    '— SnapVault',
+  ].join('\n');
 }

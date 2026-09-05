@@ -13,7 +13,9 @@ import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { getApiUrl } from "@/lib/api";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { RefreshCw } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import type { Media } from "@shared/schema";
 
@@ -38,15 +40,51 @@ export default function Search() {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Fetch search results
-  const { data: searchResults = [], isLoading } = useQuery<Media[]>({
-    queryKey: ["/api/media/search", debouncedQuery],
-    queryFn: async () => {
-      if (!debouncedQuery.trim()) return [];
-      return apiRequest(`/api/media/search?q=${encodeURIComponent(debouncedQuery)}`);
+  // Server-side filters: image/video/favorites work WITH or WITHOUT a text
+  // query, and the request is cancellable (React Query aborts the previous
+  // debounced request via the signal below).
+  const activeType =
+    selectedFilter === "images" ? "image" : selectedFilter === "videos" ? "video" : undefined;
+  const favoritesOnly = selectedFilter === "favorites";
+  const hasActiveSearch = debouncedQuery.trim().length > 0 || selectedFilter !== null;
+
+  const searchQueryResult = useInfiniteQuery({
+    queryKey: [
+      "/api/media/search",
+      debouncedQuery,
+      activeType ?? "all",
+      favoritesOnly ? "fav" : "nofav",
+    ],
+    queryFn: async ({ pageParam, signal }) => {
+      const params = new URLSearchParams();
+      if (debouncedQuery.trim()) params.set("q", debouncedQuery.trim());
+      if (activeType) params.set("type", activeType);
+      if (favoritesOnly) params.set("favorite", "true");
+      params.set("page", String(pageParam));
+      params.set("limit", "24");
+      const data = await apiRequest(`/api/media/search?${params.toString()}`, {
+        method: "GET",
+        signal,
+      });
+      return data as {
+        items: Media[];
+        total: number;
+        page: number;
+        limit: number;
+        hasMore: boolean;
+      };
     },
-    enabled: debouncedQuery.length > 0,
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.page + 1 : undefined),
+    enabled: hasActiveSearch,
+    retry: false,
+    staleTime: 0,
   });
+
+  const searchResults = searchQueryResult.data
+    ? searchQueryResult.data.pages.flatMap((page) => page.items)
+    : [];
+  const totalCount = searchQueryResult.data?.pages[0]?.total ?? 0;
 
   // Recent searches
   const { data: recentSearches = [] } = useQuery<{ id: string; query: string }[]>({
@@ -88,7 +126,8 @@ export default function Search() {
     },
   });
 
-  // Log a search once it settles
+  // Log a search once it settles (text queries only — filters alone don't
+  // create "recent searches").
   useEffect(() => {
     if (debouncedQuery.trim().length >= 2) {
       logSearchMutation.mutate(debouncedQuery.trim());
@@ -104,9 +143,22 @@ export default function Search() {
       });
     },
     onSuccess: (_data, { id, isFavorite }) => {
-      queryClient.setQueryData<Media[]>(["/api/media/search", debouncedQuery], (old = []) =>
-        old.map((m) => (m.id === id ? { ...m, isFavorite: isFavorite ? 1 : 0 } : m))
+      // Update the currently loaded search pages in place…
+      queryClient.setQueryData<any>(["/api/media/search", debouncedQuery], (old: any) =>
+        old
+          ? {
+              ...old,
+              pages: old.pages.map((page: any) => ({
+                ...page,
+                items: page.items.map((m: Media) =>
+                  m.id === id ? { ...m, isFavorite: isFavorite ? 1 : 0 } : m
+                ),
+              })),
+            }
+          : old
       );
+      // …and refresh anything that shows favorites (albums, all-media).
+      queryClient.invalidateQueries({ queryKey: ["/api/albums"] });
       setSelectedMedia((prev: Media | null) => (prev && prev.id === id ? { ...prev, isFavorite: isFavorite ? 1 : 0 } : prev));
     },
     onError: () => {
@@ -114,13 +166,10 @@ export default function Search() {
     },
   });
 
-  // Filter results based on selected filter
-  const filteredResults = searchResults.filter((item) => {
-    if (selectedFilter === "images") return item.type.startsWith("image/");
-    if (selectedFilter === "videos") return item.type.startsWith("video/");
-    if (selectedFilter === "favorites") return !!item.isFavorite;
-    return true;
-  });
+  // Filtering happens server-side (see the query above) — `searchResults`
+  // is already filtered. `filteredResults` is kept as an alias so the
+  // viewer/navigation code below keeps working.
+  const filteredResults = searchResults;
 
   const filters = [
     { id: "all", label: "All" },
@@ -157,6 +206,8 @@ export default function Search() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/media/search"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/albums"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/storage/usage"] });
       setSelectedMedia(null);
       setViewerOpen(false);
       toast({
@@ -304,7 +355,7 @@ export default function Search() {
             })}
           </div>
 
-          {searchQuery.length === 0 ? (
+          {!hasActiveSearch && searchQuery.length === 0 ? (
             recentSearches.length > 0 ? (
               <div>
                 <div className="flex items-center justify-between mb-3">
@@ -349,20 +400,33 @@ export default function Search() {
                 description="Search for photos and videos by name, date, or album."
               />
             )
-          ) : isLoading ? (
-            <div className="flex justify-center items-center py-12">
+          ) : searchQueryResult.isLoading ? (
+            <div className="flex justify-center items-center py-12" data-testid="search-loading">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+          ) : searchQueryResult.isError ? (
+            // A failed search is NOT "no results" — say what happened and
+            // offer a retry instead of silently showing an empty grid.
+            <div className="flex flex-col items-center justify-center py-12 text-center" data-testid="search-error">
+              <p className="font-semibold mb-1">Couldn't load results</p>
+              <p className="text-sm text-muted-foreground mb-4">
+                {(searchQueryResult.error as Error)?.message || "Something went wrong while searching."}
+              </p>
+              <Button variant="outline" className="rounded-2xl" onClick={() => searchQueryResult.refetch()}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Try again
+              </Button>
             </div>
           ) : filteredResults.length === 0 ? (
             <EmptyState
               icon="search"
               title="No results found"
-              description={`No media found matching "${searchQuery}".`}
+              description={`Nothing matched ${debouncedQuery.trim() ? `"${debouncedQuery.trim()}"` : "these filters"}. Try different words, or clear the filters.`}
             />
           ) : (
             <div>
-              <p className="text-[15px] font-bold mb-4">
-                Results &nbsp;•&nbsp; {filteredResults.length} item{filteredResults.length !== 1 ? 's' : ''}
+              <p className="text-[15px] font-bold mb-4" data-testid="search-results-count">
+                Results &nbsp;•&nbsp; {totalCount} item{totalCount !== 1 ? 's' : ''}
               </p>
               <MediaGrid
                 items={filteredResults.map(item => ({
@@ -380,6 +444,19 @@ export default function Search() {
                   }
                 }}
               />
+              {searchQueryResult.hasNextPage && (
+                <div className="flex justify-center mt-6">
+                  <Button
+                    variant="outline"
+                    className="rounded-2xl"
+                    onClick={() => searchQueryResult.fetchNextPage()}
+                    disabled={searchQueryResult.isFetchingNextPage}
+                    data-testid="search-load-more"
+                  >
+                    {searchQueryResult.isFetchingNextPage ? "Loading…" : "Load more"}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </div>
