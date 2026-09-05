@@ -1,22 +1,24 @@
 # What changed, and how to push it
 
-## 0. Upload returning 403 / failing (root-cause fix)
+## 0. Cloudinary "empty response" / upload failures
 
-Two real bugs were found in the upload path. Both are now fixed.
+**Bug A — the Cloudinary v2 callback was misread.**
+Correction to the earlier notes: the app imports Cloudinary's **v2** API,
+which calls `callback(undefined, result)` on success and `callback(error)`
+on failure. The **internal v1** uploader uses a single result argument; the
+v2 adapter converts it to the error-first form before our code sees it.
 
-**Bug A — the Cloudinary callback was misread (this made uploads fail).**
-`server/routes/shared.ts` wrapped the Cloudinary uploader callback with the
-old two-argument `(error, result)` signature. The Cloudinary **v2.x** SDK
-invokes that callback with a **single** argument — the result object — where
-a failure carries an `.error` field *inside* it. So the success result was
-being treated as the "error" argument and rejected: **every successful upload
-came back as a failure**, and any genuine Cloudinary error (including a 403
-from Cloudinary itself) was swallowed into a bare 500 with no details.
-`uploadToCloudinary()` now reads the single-argument result correctly, and a
-real Cloudinary failure is surfaced to the client as a 502 whose message
-includes Cloudinary's actual reason (e.g. `Cloudinary upload failed: Unknown
-account (Cloudinary HTTP 403)`), so storage misconfiguration is visible
-instead of a generic error.
+The previous single-argument handler discarded the actual success result
+and treated the absent error argument as an empty response. This reproduced
+`Cloudinary upload returned empty response - env present cloud_name=true
+api_key=true api_secret=true` even though the upload had succeeded upstream.
+It was a callback-handling bug, not an environment-variable naming change.
+
+`uploadToCloudinary()` now reads both arguments for images and chunked video
+uploads. It keeps upstream failures as **502** responses with Cloudinary's
+reason and diagnostic hint. It also sets `disable_promises: true` because the
+helper already wraps the callback in its own Promise; otherwise the SDK can
+reject an unused internal Promise and cause an unhandled rejection.
 
 **Bug B — "album not found" and "not your album" were both 403.**
 `POST /api/upload` (plus the legacy `/api/media` and `batch-move`) collapsed
@@ -33,14 +35,37 @@ readable, actionable message per status code (expired session, wrong account,
 album gone, file too large, storage unavailable) instead of dumping the raw
 body.
 
-**Tests:** `server/__tests__/upload.test.ts` (new) locks in the single-arg
-Cloudinary callback contract (image + video), the Cloudinary-error→502
-mapping, and the 404-vs-403 split. `testApp.ts` now installs the same terminal
-error handler as production so route errors surface as JSON in tests.
+**Tests:** `server/__tests__/upload.test.ts` now uses the v2 error-first
+callback contract (image + video), including null/undefined error arguments,
+genuinely empty/malformed responses, retry behavior, and temp-file cleanup.
+`server/__tests__/cloudinary-sdk.test.ts` exercises the **installed SDK** with
+only HTTPS transport stubbed, so incorrect uploader mocks cannot hide this
+regression again. It covers images, multi-chunk videos, upstream errors, and
+retries without real credentials or external uploads. The existing
+Cloudinary-error→502 mapping and 404-vs-403 album checks remain covered.
+
+**Render environment names (unchanged):** set these on the backend
+`snapvault-api` service, not only on the frontend static site:
+
+```text
+CLOUDINARY_CLOUD_NAME
+CLOUDINARY_API_KEY
+CLOUDINARY_API_SECRET
+```
+
+These match `server/cloudinary.ts`, `render.yaml`, and `.env.example`.
+The old `cloud_name` / `api_key` / `api_secret` labels were SDK option names,
+not alternate Render variable names. The presence diagnostic now uses the
+full environment-variable names and booleans only. `true` confirms a value
+is present; it does **not** validate the credentials. No secret rotation or
+renaming is required for this callback fix. `CLOUDINARY_AUTH_TOKEN_KEY` is
+optional and unrelated to this upload error.
 
 **What to do when you redeploy:**
-1. Push this branch and merge it, so Render rebuilds the `snapvault-api`
-   service.
+1. Deploy the corrected backend code to the `snapvault-api` service (merge
+   this branch into the branch Render deploys, then redeploy if auto-deploy is
+   disabled). Restarting the old code or rebuilding only the frontend will
+   not apply this fix.
 2. Retry an upload from an album that exists in your *current* account.
    - If it succeeds — done.
    - If you now get a clear **404** — that album no longer exists in the
