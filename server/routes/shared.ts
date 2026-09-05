@@ -336,21 +336,82 @@ export async function uploadToCloudinary(
         // versions) may return `url` instead of `secure_url`. Accept either,
         // preferring secure_url. This prevents a false 502 when the upload
         // actually succeeded but used the non-secure field.
-        const effectiveUrl = (result as any).secure_url || (result as any).url;
-        const publicId = (result as any).public_id;
+        // Additionally, if BOTH url fields are missing but public_id IS present,
+        // we can still recover by generating a URL via cloudinary.url() — this
+        // is the case the user hit: "missing secure_url/url" even though env
+        // vars were all present. That response is still a successful upload;
+        // we should not turn it into a 502.
+        let effectiveUrl = (result as any)?.secure_url || (result as any)?.url;
+        const publicId = (result as any)?.public_id;
+
+        // Extra diagnostics: log the actual shape we got when something is missing
+        if (!effectiveUrl || !publicId) {
+          const keys = result && typeof result === "object" ? Object.keys(result as any).slice(0, 20) : [];
+          const preview = (() => {
+            try {
+              return JSON.stringify(result).slice(0, 500);
+            } catch {
+              return String(result).slice(0, 500);
+            }
+          })();
+          console.error("[cloudinary] unexpected response shape", {
+            attempt,
+            hasSecureUrl: !!(result as any)?.secure_url,
+            hasUrl: !!(result as any)?.url,
+            hasPublicId: !!publicId,
+            keys,
+            preview,
+            env: getCloudinaryEnvStatus(),
+            filename,
+            resourceType,
+          });
+        }
+
+        // If we have a public_id but no url, try to synthesize a secure url
+        // via the SDK. This is safe because signMediaUrl() will re-sign it
+        // anyway — we just need *a* url to store.
+        if (!effectiveUrl && publicId) {
+          try {
+            const generated = cloudinary.url(publicId, {
+              secure: true,
+              resource_type: resourceType,
+              type: "authenticated",
+            });
+            if (generated) {
+              console.warn("[cloudinary] secure_url/url missing, generated from public_id", {
+                attempt,
+                filename,
+                publicId,
+                generated,
+              });
+              effectiveUrl = generated;
+            }
+          } catch (genErr) {
+            console.error("[cloudinary] failed to generate url from public_id", {
+              attempt,
+              publicId,
+              error: (genErr as any)?.message || String(genErr),
+            });
+          }
+        }
+
+        // Final fallback: if we have public_id, use it as url placeholder
+        // (signMediaUrl will replace it with a proper signed url). Only
+        // fail if we truly have no identifier at all.
+        if (!effectiveUrl && publicId) {
+          console.warn("[cloudinary] using public_id as url placeholder", {
+            attempt,
+            publicId,
+            filename,
+          });
+          effectiveUrl = publicId;
+        }
 
         if (!effectiveUrl || !publicId) {
           const missing = new Error(
-            `Cloudinary upload returned an unexpected response (missing ${!effectiveUrl ? "secure_url/url" : "public_id"}) - ${getCloudinaryEnvStatus()}`
+            `Cloudinary upload returned an unexpected response (missing ${!effectiveUrl ? "secure_url/url" : "public_id"}) - ${getCloudinaryEnvStatus()} - keys: ${result && typeof result === "object" ? Object.keys(result as any).join(",") : "no-object"}`
           ) as any;
           missing.status = 502;
-          console.error("[cloudinary] unexpected response shape", {
-            attempt,
-            hasSecureUrl: !!(result as any).secure_url,
-            hasUrl: !!(result as any).url,
-            hasPublicId: !!publicId,
-            env: getCloudinaryEnvStatus(),
-          });
           throw missing;
         }
 

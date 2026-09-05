@@ -335,4 +335,30 @@ describe("POST /api/upload", () => {
     expect(res.body.message).toContain("cloud_name");
     expect(res.body.message).toContain("CLOUDINARY_CLOUD_NAME");
   });
+
+  it("recovers when Cloudinary returns only public_id (no secure_url/url) by generating url from public_id", async () => {
+    // This is the exact failure the user reported: env present true/true/true
+    // but response missing secure_url/url. We now generate url from public_id.
+    mocks.upload.mockImplementation(
+      sdkSuccess({
+        public_id: "only-public-id",
+        resource_type: "image",
+      })
+    );
+
+    const app = await buildTestApp();
+    const agent = request.agent(app);
+    await agent.post("/api/auth/signup").send({
+      email: "only-public@example.com",
+      password: "correct-horse-battery",
+    });
+
+    const res = await agent
+      .post("/api/upload")
+      .attach("file", tinyJpeg, "only-public.jpg");
+
+    expect(res.status).toBe(200);
+    expect(fakeStorage.media.size).toBe(1);
+    expect(res.body.filename).toBe("only-public.jpg");
+  });
 });
