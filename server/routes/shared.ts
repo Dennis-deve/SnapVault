@@ -225,36 +225,144 @@ function getCloudinaryEnvStatus(): string {
   return `env present ${names.map((name) => `${name}=${!!process.env[name]}`).join(" ")}`;
 }
 
-// Helper function to upload a file already on disk (see multer diskStorage
-// above) to Cloudinary, and remove the temp file once Cloudinary is done
-// with it — win or lose.
-//
-// Videos use Cloudinary's chunked "upload_large" endpoint instead of a
-// single-shot upload. It reads the local file in bounded-size chunks
-// (CHUNK_SIZE_BYTES each) and uploads them one at a time, which:
-//   - keeps server memory flat no matter how large the video is (this is
-//     the other half of the memory fix alongside disk-based multer above),
-//   - is Cloudinary's documented, recommended path for large/video assets
-//     and tolerates flaky mobile-network conditions better than one huge
-//     request, since it's resumable per-chunk rather than all-or-nothing.
-// Images are small enough that a plain upload is fine and avoids the
-// chunking overhead.
-const CHUNK_SIZE_BYTES = 6 * 1024 * 1024; // 6MB chunks
+// ---------------------------------------------------------------------------
+// Cloudinary upload policy
+// ---------------------------------------------------------------------------
 
+// Chunked uploads for videos AND for still images above this size: the
+// chunked endpoint streams the file in bounded pieces, keeping server
+// memory flat regardless of file size (see multer diskStorage above).
+const CHUNK_SIZE_BYTES = 6 * 1024 * 1024; // 6MB chunks
+const LARGE_IMAGE_CHUNK_THRESHOLD_BYTES = 20 * 1024 * 1024; // 20MB
+
+// Only transient provider/network failures are retried, a bounded number of
+// times with exponential backoff. Permanent failures (bad credentials,
+// disallowed format, plan/size limits) are surfaced immediately —
+// re-sending a rejected file can never succeed and just wastes the user's
+// bandwidth.
+const TRANSIENT_HTTP_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
+const MAX_UPLOAD_ATTEMPTS = 3;
+const RETRY_BASE_DELAY_MS = process.env.NODE_ENV === "test" ? 10 : 400;
+const RETRY_MAX_DELAY_MS = process.env.NODE_ENV === "test" ? 40 : 4000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientUploadError(err: any): boolean {
+  if (!err) return false;
+  const message = String(err.cloudinaryRawMessage ?? err.message ?? "").toLowerCase();
+  // "Already exists" is not an error for us: it means a previous attempt of
+  // the same idempotent upload succeeded but the response was lost. Handled
+  // by the caller, never retried.
+  if (message.includes("already exists")) return false;
+  if (typeof err.cloudinaryHttpCode === "number") {
+    return TRANSIENT_HTTP_CODES.has(err.cloudinaryHttpCode);
+  }
+  // No HTTP code at all usually means the request never got a response
+  // (network blip, dropped connection, DNS) — transient by nature.
+  return true;
+}
+
+export interface CloudinaryUploadIdentity {
+  userId: string;
+  /** Stable, client-generated id for THIS file upload. Reused across
+   * retries, which is what makes uploads idempotent end to end. */
+  uploadId: string;
+}
+
+export interface CloudinaryUploadResult {
+  url: string;
+  publicId: string;
+  resourceType: "image" | "video";
+  /** Provider-reported optimized byte count (null when unavailable). */
+  bytes: number | null;
+  /** Provider-reported stored format/extension (null when unavailable). */
+  format: string | null;
+  /** True when Cloudinary reported "already exists" — the asset from an
+   * earlier (response-lost) attempt of the same upload id is what's there. */
+  reused: boolean;
+}
+
+// Map a Cloudinary stored format back to a MIME type for the media row, so
+// the database reflects what Cloudinary actually stored after optimization
+// (e.g. an input image/jpeg may be delivered/stored differently) rather
+// than the pre-upload input type.
+const FORMAT_TO_MIME: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  jpe: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  gif: "image/gif",
+  heic: "image/heic",
+  heif: "image/heif",
+  avif: "image/avif",
+  bmp: "image/bmp",
+  tiff: "image/tiff",
+  svg: "image/svg+xml",
+  pdf: "application/pdf",
+  mp4: "video/mp4",
+  webm: "video/webm",
+  mov: "video/quicktime",
+  mkv: "video/x-matroska",
+  ogv: "video/ogg",
+  flv: "video/x-flv",
+  m3u8: "application/x-mpegURL",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  aac: "audio/aac",
+};
+
+export function mimeFromCloudinaryFormat(format: string | null, resourceType: string, fallback: string): string {
+  if (!format) return fallback;
+  const mapped = FORMAT_TO_MIME[format.toLowerCase()];
+  if (mapped) return mapped;
+  return `${resourceType}/${format.toLowerCase()}`;
+}
+
+/**
+ * Upload a file already on disk (see multer diskStorage above) to
+ * Cloudinary, and remove the temp file once Cloudinary is done with it —
+ * win or lose.
+ *
+ * Identity/dedup policy: with a stable (userId, uploadId) pair the
+ * Cloudinary public id is deterministic and namespaced per account, and
+ * `overwrite: false` guarantees a retry can never overwrite a DIFFERENT
+ * asset — two users uploading "photo.jpg" get two distinct assets, and a
+ * re-sent attempt of the same upload lands on the same id.
+ *
+ * Quality policy: supported still photos (JPEG/HEIC) get content-aware
+ * quality optimization ("auto:good" — high quality, no forced resize).
+ * Containers that may hold animation (GIF/WebP/PNG/APNG/…) and other
+ * unsupported formats are stored as-is — never flattened, never converted
+ * to a static frame. Videos are transcoded by Cloudinary AFTER transfer to
+ * broadly playable H.264/MP4 with content-aware quality — no forced
+ * resizing, no frame-rate reduction, and no browser-side FFmpeg.
+ *
+ * Callback contract: ../cloudinary exports v2, whose public API is
+ * error-first — callback(undefined, result) on success, callback(error) on
+ * failure. The single-result callback belongs to the internal v1 uploader.
+ * Reading only the first v2 argument discards every success result and
+ * incorrectly reports an "empty response" even with valid env (this was the
+ * original upload bug; see FIX_NOTES_AND_PUSH_INSTRUCTIONS.md).
+ */
 export async function uploadToCloudinary(
   filePath: string,
   filename: string,
-  resourceType: 'image' | 'video'
-): Promise<{ url: string; publicId: string; resourceType: 'image' | 'video' }> {
+  resourceType: "image" | "video",
+  opts?: { identity?: CloudinaryUploadIdentity; mimeType?: string; fileSizeBytes?: number }
+): Promise<CloudinaryUploadResult> {
+  const identity = opts?.identity;
+  const mimeType = (opts?.mimeType ?? "").toLowerCase();
+  const fileSize = opts?.fileSizeBytes ?? 0;
+
   const uploadOptions: UploadApiOptions = {
     // This helper owns the Promise and handles errors via the callback.
     // Otherwise the SDK also rejects an unused internal Promise on failure,
     // which can become an unhandled rejection (including for upload_large).
     disable_promises: true,
     resource_type: resourceType,
-    folder: 'cloudmediavault',
-    public_id: filename.split('.')[0],
-    use_filename: true,
     // SECURITY: 'authenticated' delivery type means the asset is not
     // reachable via a plain/guessed URL — every request must carry a
     // valid Cloudinary signature (see server/mediaUrl.ts, which is what
@@ -262,38 +370,87 @@ export async function uploadToCloudinary(
     // were uploaded as the default public 'upload' type, so a locked
     // album's media was still a plain, permanently-public URL to anyone
     // who ever saw it, regardless of the album's lock state.
-    type: 'authenticated',
+    type: "authenticated",
+    // IDEMPOTENCE: never overwrite. Combined with deterministic public
+    // ids (below) this makes a retried upload safe: it either re-uses the
+    // existing asset or fails with "already exists" (mapped to success).
+    overwrite: false,
   };
 
-  // Optimize for HD: preserve crystal-clear HD quality for images and videos
-  if (resourceType === 'image') {
-    uploadOptions.quality = 'auto:best'; // Highest quality HD optimization
-    uploadOptions.fetch_format = 'auto'; // Auto format (WebP/AVIF for supported browsers)
-  } else if (resourceType === 'video') {
-    uploadOptions.quality = 'auto:best'; // Automatic HD video quality
-    uploadOptions.video_codec = 'auto';
+  if (identity) {
+    // Namespaced, deterministic asset id: per-account folder + the stable
+    // client upload id. A same-named file from another account, or another
+    // file from the same account, can never collide onto this id.
+    uploadOptions.folder = `cloudmediavault/${identity.userId}`;
+    uploadOptions.public_id = identity.uploadId;
+    uploadOptions.use_filename = false;
+    uploadOptions.unique_filename = false;
+  } else {
+    // Legacy/other clients without a stable upload id: keep Cloudinary's
+    // unique-name behavior so nothing can ever be overwritten.
+    uploadOptions.folder = "cloudmediavault";
+    uploadOptions.use_filename = true;
+    uploadOptions.unique_filename = true;
+  }
+
+  // Content-aware optimization. Only applied to formats where it cannot
+  // change the nature of the asset: animated/unknown image containers are
+  // retained byte-for-byte rather than risk flattening animation to a
+  // single frame.
+  if (resourceType === "image") {
+    const isStaticStillPhoto =
+      mimeType === "image/jpeg" || mimeType === "image/jpg" ||
+      mimeType === "image/heic" || mimeType === "image/heif" ||
+      (!mimeType && /\.(jpe?g|heic|heif)$/i.test(filename));
+    if (isStaticStillPhoto) {
+      uploadOptions.quality = "auto:good"; // content-aware, high quality, no resize
+    }
+    // GIF/WebP/PNG/APNG and other containers: no transformation — retained.
+  } else {
+    // Broad playability: H.264 in an MP4 container, content-aware quality.
+    // Deliberately NO width/height/crop and NO frame-rate reduction.
+    uploadOptions.video_codec = "h264";
+    uploadOptions.format = "mp4";
+    uploadOptions.quality = "auto";
+  }
+
+  // Chunked transfer for videos (always) and for large images: bounded
+  // 6MB pieces keep server memory flat and tolerate flaky networks better
+  // than one huge request.
+  const useChunkedUpload =
+    resourceType === "video" ||
+    (resourceType === "image" && fileSize > LARGE_IMAGE_CHUNK_THRESHOLD_BYTES);
+  if (useChunkedUpload) {
     uploadOptions.chunk_size = CHUNK_SIZE_BYTES;
   }
 
-  // One retry: Cloudinary can transiently 5xx or drop a chunked upload on
-  // flaky mobile networks. We retry exactly once, then surface the final
-  // error with self-diagnosing details. Temp file cleanup happens after
-  // all attempts so the second attempt still has the file.
   let lastError: any = null;
+  let attempt = 0;
 
   try {
-    for (let attempt = 1; attempt <= 2; attempt++) {
+    while (attempt < MAX_UPLOAD_ATTEMPTS) {
+      attempt += 1;
+      // "already exists" from a previous iteration is converted below the
+      // loop via lastError handling — break out and handle it as a reuse.
       try {
         const result = await new Promise<UploadApiResponse>((resolve, reject) => {
-          // ../cloudinary exports v2, whose public API is error-first:
-          // callback(undefined, result) on success, callback(error) on failure.
-          // The single-result callback belongs to the internal v1 uploader.
-          // Reading only the first v2 argument discards every success result
-          // and incorrectly reports an "empty response" even with valid env.
           const callback: UploadResponseCallback = (error, res) => {
             if (error) {
+              const message = error.message || "unknown error";
+              const isReuse =
+                typeof message === "string" && message.toLowerCase().includes("already exists");
+              const reuseError = isReuse
+                ? Object.assign(new Error(`Cloudinary asset already exists: ${message}`), {
+                    reuse: true,
+                  })
+                : null;
+              if (reuseError) {
+                reject(reuseError);
+                return;
+              }
+
               const diagnosis = diagnoseCloudinaryError(error);
-              const baseMsg = error.message || "unknown error";
+              const baseMsg = message;
               const httpPart = typeof error.http_code === "number" ? ` (Cloudinary HTTP ${error.http_code})` : "";
               const diagPart = diagnosis ? ` - ${diagnosis}` : "";
               const cloudinaryError = Object.assign(
@@ -337,7 +494,7 @@ export async function uploadToCloudinary(
             resolve(res);
           };
 
-          if (resourceType === 'video') {
+          if (useChunkedUpload) {
             cloudinary.uploader.upload_large(filePath, uploadOptions, callback);
           } else {
             cloudinary.uploader.upload(filePath, uploadOptions, callback);
@@ -348,8 +505,6 @@ export async function uploadToCloudinary(
         // versions) may return `url` instead of `secure_url`. Accept either,
         // preferring secure_url. This prevents a false 502 when the upload
         // actually succeeded but used the non-secure field.
-        // If both URL fields are missing but public_id is present, preserve
-        // the defensive fallback that generates a URL via cloudinary.url().
         let effectiveUrl = result.secure_url || result.url;
         const publicId = result.public_id;
 
@@ -432,25 +587,55 @@ export async function uploadToCloudinary(
           });
         }
 
-        return { url: effectiveUrl, publicId, resourceType };
+        // Store what Cloudinary actually has after its optimization: the
+        // provider's own byte count and format, not the input's. The
+        // storage meter then reflects saved media, and playback uses the
+        // real delivered type.
+        const bytes = typeof (result as any).bytes === "number" ? (result as any).bytes : null;
+        const format = typeof result.format === "string" && result.format ? result.format : null;
+
+        return { url: effectiveUrl, publicId, resourceType, bytes, format, reused: false };
       } catch (err: any) {
-        lastError = err;
-        // If this was the first attempt, retry once regardless of code —
-        // transient network hiccups can happen even on auth errors (e.g. DNS),
-        // and a single retry is cheap. Log the retry.
-        if (attempt === 1) {
-          console.warn("[cloudinary] upload attempt 1 failed, retrying once", {
-            message: err?.message,
-            http_code: err?.cloudinaryHttpCode ?? null,
-            diagnosis: err?.diagnosis ?? null,
-            filename,
-          });
-          // Small delay not required but helps for rate-limit 429
-          // Keep it synchronous for test determinism — no actual sleep.
-          continue;
+        // IDEMPOTENT REUSE: the asset already exists from an earlier
+        // attempt of this same upload (its response was lost). Not an
+        // error — build the result from the deterministic id so the DB
+        // layer can return the original row.
+        if (err?.reuse) {
+          const publicId = identity
+            ? `cloudmediavault/${identity.userId}/${identity.uploadId}`
+            : null;
+          if (publicId) {
+            let url = "";
+            try {
+              url = cloudinary.url(publicId, {
+                secure: true,
+                resource_type: resourceType,
+                type: "authenticated",
+              });
+            } catch {
+              url = publicId;
+            }
+            return { url, publicId, resourceType, bytes: null, format: null, reused: true };
+          }
         }
-        // Second attempt also failed — give up and propagate
-        throw err;
+
+        lastError = err;
+        const transient = isTransientUploadError(err);
+        if (!transient || attempt >= MAX_UPLOAD_ATTEMPTS) {
+          // Permanent failure, or transient failures that exhausted the
+          // attempt budget: propagate with the diagnosis attached.
+          throw err;
+        }
+        const delay = Math.min(RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1), RETRY_MAX_DELAY_MS);
+        console.warn("[cloudinary] transient upload failure, backing off before retry", {
+          attempt,
+          nextAttempt: attempt + 1,
+          delayMs: delay,
+          message: err?.message,
+          http_code: err?.cloudinaryHttpCode ?? null,
+          filename,
+        });
+        await sleep(delay);
       }
     }
     // Should be unreachable — loop either returns or throws

@@ -3,6 +3,7 @@ import { AppSidebar } from "@/components/AppSidebar";
 import { BottomNav } from "@/components/BottomNav";
 import { UploadCard } from "@/components/UploadCard";
 import { UploadModal } from "@/components/UploadModal";
+import { useUploadQueue, useCompletedCounter } from "@/lib/uploadQueue";
 import { AlbumCard } from "@/components/AlbumCard";
 import { CreateAlbumCard } from "@/components/CreateAlbumCard";
 import { EmptyState } from "@/components/EmptyState";
@@ -14,11 +15,10 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Video, Image as ImageIcon, FolderOpen, Upload } from "lucide-react";
-import { useState, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
-import { uploadFile } from "@/lib/upload";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { setAlbumUnlockToken, clearAlbumUnlockToken } from "@/lib/albumUnlock";
@@ -38,9 +38,11 @@ export default function Dashboard() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadFiles, setUploadFiles] = useState<UploadFileState[]>([]);
+  // One shared, app-wide upload queue (bounded parallelism, per-file
+  // cancel/retry, stable upload ids for server-side dedup).
+  const { items: uploadFiles, enqueue, cancel, retry, clearFinished } = useUploadQueue();
+  const isUploading = uploadFiles.some((f) => f.status !== "done" && f.status !== "error" && f.status !== "cancelled");
+  const lastSeenDone = useCompletedCounter(uploadFiles);
   const [showPinDialog, setShowPinDialog] = useState(false);
   const [pinAction, setPinAction] = useState<{ albumId: string; action: 'lock' | 'unlock' | 'view' } | null>(null);
   const [isPinLoading, setIsPinLoading] = useState(false);
@@ -90,11 +92,8 @@ export default function Dashboard() {
     input.multiple = true;
     input.accept = 'image/*,video/*';
     // Many Android Chrome/WebView builds silently fail to open the native
-    // picker (or never fire onchange once a file is picked) when the input
-    // is never attached to the DOM — this was previously created and
-    // clicked entirely detached, which is why nothing happened when
-    // uploading from an Android phone. Keep it invisible but present in
-    // the document, and clean it up once the selection is handled.
+    // picker when the input is never attached to the DOM — keep it
+    // invisible but present in the document, and clean it up afterwards.
     input.style.position = 'fixed';
     input.style.top = '-1000px';
     input.style.left = '-1000px';
@@ -105,92 +104,33 @@ export default function Dashboard() {
       if (input.parentNode) input.parentNode.removeChild(input);
     };
 
-    input.onchange = async (e: any) => {
+    input.onchange = (e: any) => {
       const files = e.target?.files;
       if (!files || files.length === 0) {
         cleanup();
         return;
       }
-
-      const fileArray = Array.from(files) as File[];
-      const totalFiles = fileArray.length;
-
-      // Give every file a stable id + starting state up front so the
-      // per-file progress list (matching the Figma Upload screen) can render
-      // immediately, before any bytes have actually gone out.
-      const initialStates: UploadFileState[] = fileArray.map((file, idx) => ({
-        id: `${Date.now()}-${idx}-${file.name}`,
-        name: file.name,
-        sizeLabel: formatFileSize(file.size),
-        progress: 0,
-        status: "uploading",
-        isVideo: file.type.startsWith("video/"),
-      }));
-
-      setIsUploading(true);
-      setUploadProgress(0);
-      setUploadFiles(initialStates);
-
-      const updateFile = (id: string, patch: Partial<UploadFileState>) => {
-        setUploadFiles((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)));
-      };
-
-      try {
-        let uploadedFiles = 0;
-
-        // Sequential uploads on mobile for better reliability
-        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-        const batchSize = isMobile ? 1 : 3;
-        
-        for (let i = 0; i < fileArray.length; i += batchSize) {
-          const batch = fileArray.slice(i, i + batchSize);
-          const batchStates = initialStates.slice(i, i + batchSize);
-          
-          await Promise.all(
-            batch.map(async (file, batchIdx) => {
-              const fileId = batchStates[batchIdx].id;
-
-              // Use upload helper with session-cookie authentication and
-              // per-file progress tracking.
-              await uploadFile(file, albumId, (percent) => {
-                updateFile(fileId, { progress: Math.round(percent) });
-                const overallProgress = Math.round(((uploadedFiles + (percent / 100)) / totalFiles) * 100);
-                setUploadProgress(overallProgress);
-              });
-
-              updateFile(fileId, { progress: 100, status: "done" });
-              uploadedFiles++;
-              setUploadProgress(Math.round((uploadedFiles / totalFiles) * 100));
-            })
-          );
-        }
-
-        queryClient.invalidateQueries({ queryKey: ["/api/albums"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/storage/usage"] });
-        toast({
-          title: "✅ Upload complete!",
-          description: `${totalFiles} file(s) uploaded successfully.`,
-        });
-        setIsUploading(false);
-        setUploadProgress(0);
-        // Leave the completed list visible briefly so the person sees the
-        // "Done" state, then clear it.
-        setTimeout(() => setUploadFiles([]), 3000);
-      } catch (error: any) {
-        toast({
-          title: "Upload failed",
-          description: error.message || "Failed to upload files",
-          variant: "destructive",
-        });
-        setIsUploading(false);
-        setUploadProgress(0);
-      } finally {
-        cleanup();
-      }
+      // Enqueue everything; the shared queue owns concurrency, retries,
+      // cancellation and progress. One bad file can't stop the rest.
+      enqueue(Array.from(files) as File[], albumId);
+      toast({
+        title: "Uploading…",
+        description: `${files.length} file(s) queued.`,
+      });
+      cleanup();
     };
 
     input.click();
   };
+
+  // When uploads for this view complete, refresh what they changed.
+  useEffect(() => {
+    if (lastSeenDone > 0) {
+      queryClient.invalidateQueries({ queryKey: ["/api/albums"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/storage/usage"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/media"] });
+    }
+  }, [lastSeenDone]);
 
   const handleCreateAlbum = async (name: string, description?: string, isLocked?: boolean, pin?: string) => {
     try {
@@ -359,8 +299,14 @@ export default function Dashboard() {
             {/* Per-file upload progress */}
             {uploadFiles.length > 0 && (
               <UploadProgressList
-                files={uploadFiles}
-                onClear={() => setUploadFiles([])}
+                files={uploadFiles.map((f) => ({
+                  ...f,
+                  sizeLabel: formatFileSize(f.size),
+                  isVideo: f.type.startsWith("video/"),
+                }))}
+                onClear={clearFinished}
+                onCancel={cancel}
+                onRetry={retry}
               />
             )}
 

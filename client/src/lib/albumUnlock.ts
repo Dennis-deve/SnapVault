@@ -33,3 +33,22 @@ export function clearAlbumUnlockToken(albumId: string): void {
     // ignore
   }
 }
+
+/**
+ * Drop every album-unlock token in this tab. Called when the signed-in
+ * account changes (logout / login as someone else): unlock tokens are
+ * scoped to a user+album pair server-side and are useless — worse,
+ * confusing — for a different account, so they must not survive the switch.
+ */
+export function clearAllAlbumUnlockTokens(): void {
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (key && key.startsWith(prefix)) keys.push(key);
+    }
+    keys.forEach((key) => sessionStorage.removeItem(key));
+  } catch {
+    // sessionStorage unavailable — nothing to clear.
+  }
+}

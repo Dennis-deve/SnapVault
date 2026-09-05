@@ -185,7 +185,9 @@ describe("POST /api/upload", () => {
     expect(res.body.message).toContain("CLOUDINARY_API_SECRET=true");
     expect(res.body.message).not.toContain("test-key");
     expect(res.body.message).not.toContain("test-secret");
-    expect(mocks.upload).toHaveBeenCalledTimes(2);
+    // An empty/malformed response has no HTTP status to blame — treated as
+    // transient and retried up to the bounded attempt count (3).
+    expect(mocks.upload).toHaveBeenCalledTimes(3);
     expect(fakeStorage.media.size).toBe(0);
     expect(existsSync(mocks.upload.mock.calls[0][0])).toBe(false);
   });
@@ -203,7 +205,9 @@ describe("POST /api/upload", () => {
 
     expect(res.status).toBe(502);
     expect(res.body.message).toContain("unexpected response");
-    expect(mocks.upload).toHaveBeenCalledTimes(2);
+    // Missing-identity responses carry no HTTP status — transient class,
+    // retried up to the bounded attempt count (3), never saved as media.
+    expect(mocks.upload).toHaveBeenCalledTimes(3);
     expect(fakeStorage.media.size).toBe(0);
     expect(existsSync(mocks.upload.mock.calls[0][0])).toBe(false);
   });
@@ -363,7 +367,7 @@ describe("POST /api/upload", () => {
     expect(fakeStorage.media.size).toBe(1);
   });
 
-  it("returns 502 after retry exhausted (both attempts fail)", async () => {
+  it("returns 502 after retry exhausted (all bounded attempts fail transiently)", async () => {
     mocks.upload.mockImplementation(
       sdkFailure({ message: "Service unavailable", http_code: 503 })
     );
@@ -381,8 +385,8 @@ describe("POST /api/upload", () => {
 
     expect(res.status).toBe(502);
     expect(res.body.message).toContain("Service unavailable");
-    // Should have attempted twice (one retry)
-    expect(mocks.upload).toHaveBeenCalledTimes(2);
+    // Transient (503): retried up to MAX attempts (3), then surfaced as 502.
+    expect(mocks.upload).toHaveBeenCalledTimes(3);
     expect(fakeStorage.media.size).toBe(0);
   });
 
@@ -477,7 +481,8 @@ describe("POST /api/upload", () => {
 
     expect(res.status).toBe(502);
     expect(res.body.message).toContain("File size too large");
-    // Should have retried once
-    expect(mocks.upload).toHaveBeenCalledTimes(2);
+    // Permanent (HTTP 400 plan/format/size error): NOT retried —
+    // re-sending a rejected file can never succeed.
+    expect(mocks.upload).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,4 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
+import crypto from "crypto";
 import { z } from "zod";
 import { storage } from "../storage";
 import { insertMediaSchema } from "@shared/schema";
@@ -10,7 +11,18 @@ import {
   deleteFromCloudinary,
   uploadToCloudinary,
   cleanupTempFile,
+  mimeFromCloudinaryFormat,
 } from "./shared";
+
+// Stable client-generated upload ids: opaque, URL-safe, bounded length.
+// The SAME id must be re-sent on a retry of the same file — that is what
+// makes a re-attempt after a lost response resolve to the original record
+// instead of creating a duplicate (see uploadToCloudinary + createMedia).
+const UPLOAD_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
+
+function deterministicMediaId(userId: string, uploadId: string): string {
+  return `mv_${crypto.createHash("sha256").update(`${userId}:${uploadId}`).digest("hex").slice(0, 32)}`;
+}
 
 export function registerMediaRoutes(app: Express) {
   app.get("/api/albums/:albumId/media", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
@@ -43,16 +55,45 @@ export function registerMediaRoutes(app: Express) {
     }
   });
 
+  // Search: literal, case-insensitive text matching across filenames, media
+  // types, album names/descriptions and upload dates (YYYY-MM-DD or a
+  // year/month prefix). Multiple words narrow the search (AND). Type and
+  // favorites filters work with OR without a text query. Results are
+  // paginated, newest first, with a deterministic tie-breaker, and locked /
+  // orphaned media never appear (see DBStorage.searchMedia).
   app.get("/api/media/search", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const query = req.query.q as string;
+      const q = typeof req.query.q === "string" ? req.query.q : "";
+      const typeParam = req.query.type;
+      const favoriteParam = req.query.favorite;
+      const page = Math.max(1, parseInt(String(req.query.page ?? "1"), 10) || 1);
+      const limit = Math.min(60, Math.max(1, parseInt(String(req.query.limit ?? "24"), 10) || 24));
 
-      if (!query) {
-        return res.status(400).json({ message: "Query parameter 'q' is required" });
+      if (!q.trim() && !typeParam && favoriteParam !== "true" && favoriteParam !== "1") {
+        // Nothing to search by — return an empty page rather than the whole
+        // account (the client only asks once a query/filter is active).
+        return res.json({ items: [], total: 0, page, limit, hasMore: false });
       }
 
-      const mediaItems = await storage.searchMedia(req.user!.id, query);
-      res.json(signMediaUrls(mediaItems));
+      const type: "image" | "video" | undefined =
+        typeParam === "image" || typeParam === "video" ? typeParam : undefined;
+      const favorite = favoriteParam === "true" || favoriteParam === "1";
+
+      const result = await storage.searchMedia(req.user!.id, {
+        query: q,
+        type,
+        favorite: favorite || undefined,
+        page,
+        limit,
+      });
+
+      res.json({
+        items: signMediaUrls(result.items),
+        total: result.total,
+        page: result.page,
+        limit: result.limit,
+        hasMore: page * limit < result.total,
+      });
     } catch (error) {
       next(error);
     }
@@ -76,7 +117,14 @@ export function registerMediaRoutes(app: Express) {
         return res.status(400).json({ message: "No file uploaded" });
       }
 
-      const { albumId } = req.body;
+      const { albumId, uploadId } = req.body;
+
+      // Stable per-file upload id (client-generated UUID re-used across
+      // retries). Invalid ids are ignored rather than rejected, so older
+      // clients without one still upload — they just don't get the
+      // idempotent-dedup protection.
+      const validUploadId =
+        typeof uploadId === "string" && UPLOAD_ID_RE.test(uploadId) ? uploadId : null;
 
       // Verify album belongs to user if albumId is provided.
       //
@@ -105,35 +153,48 @@ export function registerMediaRoutes(app: Express) {
       // Determine resource type
       const resourceType = req.file.mimetype.startsWith('video/') ? 'video' : 'image';
 
-      console.log("Uploading to Cloudinary:", {
-        filename: req.file.originalname,
-        size: req.file.size,
-        type: resourceType
-      });
-
       // Upload to Cloudinary (streamed from the temp file multer wrote to
       // disk — see server/routes/shared.ts for why this is no longer a
       // Buffer held in memory)
       const uploaded = await uploadToCloudinary(
         req.file.path,
         req.file.originalname,
-        resourceType
+        resourceType,
+        {
+          identity: validUploadId
+            ? { userId: req.user!.id, uploadId: validUploadId }
+            : undefined,
+          mimeType: req.file.mimetype,
+          fileSizeBytes: req.file.size,
+        }
       );
 
-      console.log("Upload successful, saving to DB");
-
-      // Save to database
+      // Save to database. With a stable upload id, the row id is
+      // deterministic: if this attempt is a retry after a LOST response
+      // (the first one actually succeeded), createMedia returns the
+      // original row instead of inserting a duplicate.
       const media = await storage.createMedia(
         {
           filename: req.file.originalname,
           path: uploaded.url,
-          type: req.file.mimetype,
-          size: req.file.size,
+          // What Cloudinary actually stored (after its optimization), not
+          // the pre-upload input: the storage meter must reflect saved
+          // bytes, and playback must use the delivered type.
+          type: mimeFromCloudinaryFormat(uploaded.format, uploaded.resourceType, req.file.mimetype),
+          size: uploaded.bytes ?? req.file.size,
           albumId: albumId || null,
         },
         req.user!.id,
-        { publicId: uploaded.publicId, resourceType: uploaded.resourceType }
+        { publicId: uploaded.publicId, resourceType: uploaded.resourceType },
+        validUploadId ? { id: deterministicMediaId(req.user!.id, validUploadId) } : undefined
       );
+
+      if (uploaded.reused) {
+        console.log("[upload] re-used existing Cloudinary asset + media row for a retried upload", {
+          uploadId: validUploadId,
+          mediaId: media.id,
+        });
+      }
 
       res.json(signMediaUrl(media));
     } catch (error) {

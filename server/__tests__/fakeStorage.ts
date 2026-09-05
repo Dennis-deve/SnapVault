@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import type { IStorage } from "../storage";
+import type { IStorage, SearchMediaParams, SearchMediaResult, ConsumeResetResult } from "../storage";
 import type {
   User,
   InsertUser,
@@ -26,6 +26,8 @@ export class FakeStorage implements IStorage {
   passwordResetTokens = new Map<string, PasswordResetToken>();
   emailChangeTokens = new Map<string, EmailChangeToken>();
   searchHistory = new Map<string, SearchHistory>();
+  /** Test-observation log: which users had sessions destroyed. */
+  destroyedSessionUserIds: string[] = [];
 
   reset() {
     this.users.clear();
@@ -34,6 +36,7 @@ export class FakeStorage implements IStorage {
     this.passwordResetTokens.clear();
     this.emailChangeTokens.clear();
     this.searchHistory.clear();
+    this.destroyedSessionUserIds = [];
   }
 
   // ---- Users ----
@@ -50,7 +53,7 @@ export class FakeStorage implements IStorage {
     const id = randomUUID();
     const created: User = {
       id,
-      email: user.email,
+      email: user.email.trim().toLowerCase(),
       password: user.password ?? null,
       pin: user.pin ?? null,
       googleId: null,
@@ -89,12 +92,11 @@ export class FakeStorage implements IStorage {
     const user = this.users.get(userId);
     if (user) user.publicSharingEnabled = enabled ? 1 : 0;
   }
-  async updateUserPassword(userId: string, hashedPassword: string) {
-    const user = this.users.get(userId);
-    if (user) user.password = hashedPassword;
-  }
   async deleteUser(userId: string) {
     this.users.delete(userId);
+  }
+  async destroySessionsForUser(userId: string, _exceptSid?: string) {
+    this.destroyedSessionUserIds.push(userId);
   }
 
   // ---- Albums ----
@@ -139,6 +141,21 @@ export class FakeStorage implements IStorage {
     if (shareToken) album.shareToken = shareToken;
     return album;
   }
+  async revokeAlbumSharing(id: string) {
+    const album = this.albums.get(id);
+    if (album) {
+      album.isPublic = 0;
+      album.shareToken = null;
+    }
+  }
+  async revokeAllAlbumSharesForUser(userId: string) {
+    for (const album of Array.from(this.albums.values())) {
+      if (album.userId === userId) {
+        album.isPublic = 0;
+        album.shareToken = null;
+      }
+    }
+  }
 
   // ---- Media ----
   async getMedia(id: string) {
@@ -148,7 +165,13 @@ export class FakeStorage implements IStorage {
     return Array.from(this.media.values()).filter((m) => m.albumId === albumId);
   }
   async getMediaByUserId(userId: string) {
-    return Array.from(this.media.values()).filter((m) => m.userId === userId);
+    const albumById = new Map(Array.from(this.albums.values()).map((a) => [a.id, a]));
+    return Array.from(this.media.values()).filter((m) => {
+      if (m.userId !== userId) return false;
+      if (!m.albumId) return true;
+      const album = albumById.get(m.albumId);
+      return !!album && album.isLocked === 0;
+    });
   }
   async getMediaByIds(ids: string[], userId: string) {
     return Array.from(this.media.values()).filter((m) => ids.includes(m.id) && m.userId === userId);
@@ -156,9 +179,17 @@ export class FakeStorage implements IStorage {
   async createMedia(
     mediaItem: InsertMedia,
     userId: string,
-    cloudinaryInfo?: { publicId: string; resourceType: string }
+    cloudinaryInfo?: { publicId: string; resourceType: string },
+    identity?: { id: string }
   ): Promise<Media> {
-    const id = randomUUID();
+    // Mirror DBStorage's primary-key dedupe: a deterministic id that
+    // already exists returns the ORIGINAL row (retry after lost response),
+    // never a duplicate.
+    if (identity?.id) {
+      const existing = this.media.get(identity.id);
+      if (existing) return existing;
+    }
+    const id = identity?.id ?? randomUUID();
     const created: Media = {
       id,
       filename: mediaItem.filename,
@@ -191,11 +222,58 @@ export class FakeStorage implements IStorage {
     const m = this.media.get(id);
     if (m) m.isFavorite = isFavorite ? 1 : 0;
   }
-  async searchMedia(userId: string, query: string) {
-    const q = query.toLowerCase();
-    return Array.from(this.media.values()).filter(
-      (m) => m.userId === userId && (m.filename.toLowerCase().includes(q) || m.type.toLowerCase().includes(q))
+  async searchMedia(userId: string, params: SearchMediaParams): Promise<SearchMediaResult> {
+    const page = Math.max(1, Math.floor(params.page ?? 1));
+    const limit = Math.max(1, Math.floor(params.limit ?? 24));
+    const albumById = new Map(Array.from(this.albums.values()).map((a) => [a.id, a]));
+
+    const isAccessible = (m: Media) => {
+      if (m.userId !== userId) return false;
+      if (!m.albumId) return true;
+      const album = albumById.get(m.albumId);
+      if (!album) return false; // orphaned
+      if (album.userId !== userId) return false; // foreign album
+      return album.isLocked === 0;
+    };
+
+    const matchesWord = (m: Media, word: string) => {
+      // FakeStorage matches literal substrings (no SQL wildcards involved),
+      // mirroring production's escaped-LIKE semantics.
+      const literal = word.toLowerCase();
+      const album = m.albumId ? albumById.get(m.albumId) : undefined;
+      const haystacks = [
+        m.filename.toLowerCase(),
+        m.type.toLowerCase(),
+        album?.name?.toLowerCase() ?? "",
+        album?.description?.toLowerCase() ?? "",
+        m.createdAt.toISOString().slice(0, 10),
+      ];
+      const dateMatch = /^\d{4}(-\d{2})?(-\d{2})?$/.test(word) && haystacks[4].startsWith(literal);
+      return haystacks.some((h) => h.includes(literal)) || dateMatch;
+    };
+
+    let rows = Array.from(this.media.values()).filter(isAccessible);
+
+    if (params.type === "image") rows = rows.filter((m) => m.type.startsWith("image/"));
+    if (params.type === "video") rows = rows.filter((m) => m.type.startsWith("video/"));
+    if (params.favorite) rows = rows.filter((m) => m.isFavorite === 1);
+
+    const trimmed = (params.query ?? "").trim();
+    if (trimmed) {
+      const words = trimmed.split(/\s+/).filter(Boolean).slice(0, 8);
+      for (const word of words) {
+        rows = rows.filter((m) => matchesWord(m, word));
+      }
+    }
+
+    rows.sort((a, b) =>
+      b.createdAt.getTime() !== a.createdAt.getTime()
+        ? b.createdAt.getTime() - a.createdAt.getTime()
+        : b.id.localeCompare(a.id)
     );
+
+    const total = rows.length;
+    return { items: rows.slice((page - 1) * limit, page * limit), total, page, limit };
   }
 
   // ---- Password reset tokens ----
@@ -220,6 +298,26 @@ export class FakeStorage implements IStorage {
     for (const [key, t] of Array.from(this.passwordResetTokens.entries())) {
       if (t.userId === userId) this.passwordResetTokens.delete(key);
     }
+  }
+  async updateUserPassword(userId: string, hashedPassword: string) {
+    const user = this.users.get(userId);
+    if (user) user.password = hashedPassword;
+  }
+  async consumePasswordResetTokenAndSetPassword(
+    token: string,
+    hashedPassword: string
+  ): Promise<ConsumeResetResult> {
+    const row = this.passwordResetTokens.get(token);
+    if (!row) return { ok: false, reason: "invalid" };
+    if (row.expiresAt.getTime() <= Date.now()) {
+      this.passwordResetTokens.delete(token);
+      return { ok: false, reason: "expired" };
+    }
+    this.passwordResetTokens.delete(token);
+    const user = this.users.get(row.userId);
+    if (user) user.password = hashedPassword;
+    this.destroyedSessionUserIds.push(row.userId);
+    return { ok: true, userId: row.userId };
   }
 
   // ---- Email change tokens ----
@@ -270,9 +368,9 @@ export class FakeStorage implements IStorage {
     if (entry && entry.userId === userId) this.searchHistory.delete(id);
   }
   async clearSearchHistory(userId: string) {
-    for (const [key, s] of Array.from(this.searchHistory.entries())) {
+    Array.from(this.searchHistory.entries()).forEach(([key, s]) => {
       if (s.userId === userId) this.searchHistory.delete(key);
-    }
+    });
   }
 }
 

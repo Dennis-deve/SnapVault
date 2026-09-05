@@ -17,8 +17,8 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { PinDialog } from "@/components/PinDialog";
 import { getAlbumUnlockToken, setAlbumUnlockToken, clearAlbumUnlockToken } from "@/lib/albumUnlock";
-import { uploadFile } from "@/lib/upload";
-import { UploadProgressList, type UploadFileState } from "@/components/UploadProgressList";
+import { UploadProgressList } from "@/components/UploadProgressList";
+import { useUploadQueue, useCompletedCounter } from "@/lib/uploadQueue";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,8 +34,11 @@ export default function AlbumView() {
 
   const [viewerOpen, setViewerOpen] = useState(false);
   const [selectedMedia, setSelectedMedia] = useState<any>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadFiles, setUploadFiles] = useState<UploadFileState[]>([]);
+  // Same shared upload queue as the Dashboard — one pool of workers, one
+  // list of per-file statuses, stable upload ids for server-side dedup.
+  const { items: uploadFiles, enqueue, cancel, retry, clearFinished } = useUploadQueue();
+  const isUploading = uploadFiles.some((f) => f.status !== "done" && f.status !== "error" && f.status !== "cancelled");
+  const lastSeenDone = useCompletedCounter(uploadFiles);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const fileInputRef = useState<HTMLInputElement | null>(null)[0];
 
@@ -365,62 +368,27 @@ export default function AlbumView() {
     }
   };
 
-  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
-    const fileArray = Array.from(files);
-    const initialStates: UploadFileState[] = fileArray.map((file, idx) => ({
-      id: `${Date.now()}-${idx}-${file.name}`,
-      name: file.name,
-      sizeLabel: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-      progress: 0,
-      status: "uploading",
-      isVideo: file.type.startsWith("video/"),
-    }));
-
-    setIsUploading(true);
-    setUploadFiles(initialStates);
-
-    const updateFile = (id: string, patch: Partial<UploadFileState>) => {
-      setUploadFiles((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)));
-    };
-
-    try {
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      const batchSize = isMobile ? 1 : 3;
-      
-      for (let i = 0; i < fileArray.length; i += batchSize) {
-        const batch = fileArray.slice(i, i + batchSize);
-        const batchStates = initialStates.slice(i, i + batchSize);
-
-        await Promise.all(
-          batch.map(async (file, batchIdx) => {
-            const fileId = batchStates[batchIdx].id;
-            await uploadFile(file, albumId, (percent) => {
-              updateFile(fileId, { progress: Math.round(percent) });
-            });
-            updateFile(fileId, { progress: 100, status: "done" });
-          })
-        );
-      }
-
-      queryClient.invalidateQueries({ queryKey: ["/api/albums", albumId, "media"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/storage/usage"] });
-      toast({
-        title: "✅ Upload complete!",
-        description: `${fileArray.length} file(s) uploaded successfully.`,
-      });
-      setIsUploading(false);
-    } catch (error: any) {
-      toast({
-        title: "Upload failed",
-        description: error.message || "Failed to upload files",
-        variant: "destructive",
-      });
-      setIsUploading(false);
-    }
+    // Enqueue into the shared queue: bounded parallelism, per-file retry /
+    // cancel, and a failure of one file never stops the rest of the batch.
+    enqueue(Array.from(files), albumId ?? undefined);
+    toast({
+      title: "Uploading…",
+      description: `${files.length} file(s) queued.`,
+    });
   };
+
+  // Refresh this album + storage usage when uploads finish.
+  useEffect(() => {
+    if (lastSeenDone > 0) {
+      queryClient.invalidateQueries({ queryKey: ["/api/albums", albumId, "media"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/albums"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/storage/usage"] });
+    }
+  }, [lastSeenDone]);
 
   const handleUploadClick = () => {
     const input = document.createElement('input');
@@ -656,8 +624,17 @@ export default function AlbumView() {
         {uploadFiles.length > 0 && (
           <div className="mb-6">
             <UploadProgressList
-              files={uploadFiles}
-              onClear={() => setUploadFiles([])}
+              files={uploadFiles.map((f) => ({
+                ...f,
+                sizeLabel:
+                  f.size < 1024 * 1024
+                    ? `${(f.size / 1024).toFixed(1)} KB`
+                    : `${(f.size / (1024 * 1024)).toFixed(1)} MB`,
+                isVideo: f.type.startsWith("video/"),
+              }))}
+              onClear={clearFinished}
+              onCancel={cancel}
+              onRetry={retry}
             />
           </div>
         )}

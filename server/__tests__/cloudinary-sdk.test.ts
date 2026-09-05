@@ -45,6 +45,10 @@ function successResponse(resourceType: "image" | "video") {
     public_id: "cloudmediavault/test-asset",
     secure_url: `https://res.cloudinary.com/test-cloud/${resourceType}/authenticated/test-asset`,
     resource_type: resourceType,
+    // Cloudinary's own optimized byte count + stored format are captured
+    // for the media row (storage meter reflects saved media).
+    bytes: 1234,
+    format: resourceType === "video" ? "mp4" : "jpg",
     done: true,
   };
 }
@@ -96,6 +100,9 @@ describe("uploadToCloudinary with the real v2 SDK", () => {
         url: successResponse(resourceType).secure_url,
         publicId: "cloudmediavault/test-asset",
         resourceType,
+        bytes: 1234,
+        format: resourceType === "video" ? "mp4" : "jpg",
+        reused: false,
       });
       expect(api).toHaveBeenCalledTimes(resourceType === "video" ? 2 : 1);
       expect(existsSync(filePath)).toBe(false);
@@ -103,7 +110,7 @@ describe("uploadToCloudinary with the real v2 SDK", () => {
   );
 
   it.each(["image", "video"] as const)(
-    "propagates a %s API error without an unhandled SDK promise rejection",
+    "propagates a %s API error (permanent: no retry) without an unhandled SDK promise rejection",
     async (resourceType) => {
       const filePath = path.join(tempDir, resourceType === "image" ? "pic.jpg" : "clip.mp4");
       await writeFile(filePath, "test-file-bytes");
@@ -118,7 +125,9 @@ describe("uploadToCloudinary with the real v2 SDK", () => {
         cloudinaryRawMessage: "Invalid API key",
         message: expect.stringContaining("CLOUDINARY_API_KEY"),
       });
-      expect(api).toHaveBeenCalledTimes(2);
+      // 401 = permanent credentials error: never re-sent (retrying cannot
+      // fix a bad API key; it would only burn the user's bandwidth).
+      expect(api).toHaveBeenCalledTimes(1);
       expect(existsSync(filePath)).toBe(false);
     },
   );
