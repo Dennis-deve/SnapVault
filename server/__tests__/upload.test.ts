@@ -1,12 +1,13 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { existsSync } from "node:fs";
 import request from "supertest";
 import { fakeStorage } from "./fakeStorage";
 
-// The Cloudinary SDK is mocked at the uploader level. CRUCIALLY, the mocks
-// invoke the callback exactly the way the real v2.x SDK does — with a
-// SINGLE argument (the result object; failures carry a `.error` field
-// inside it), NOT the old (error, result) two-argument style. Regression
-// tests below assert the server survives that contract.
+// The imported Cloudinary v2 API uses an error-first callback:
+// callback(undefined, result) on success, callback(error) on failure.
+// Its underlying v1 implementation uses a single result argument, but that
+// is NOT the API this app imports. A separate real-SDK test verifies this
+// contract without mocking the uploader itself.
 // The auth routes use a module-level rate limiter (5 signups per IP per
 // 15 min). Tests sign up several times from the same synthetic IP, so stub
 // the limiter out — it's not what's under test here.
@@ -40,15 +41,20 @@ vi.mock("../storage", async () => {
 
 const { buildTestApp } = await import("./testApp");
 
-/** Mimic the real SDK: callback is invoked with ONE argument. */
+type SdkCallback = (
+  error: { message: string; http_code?: number; name?: string } | null | undefined,
+  result?: Record<string, unknown>,
+) => void;
+
+/** Mimic the public v2 API, not its internal v1 implementation. */
 function sdkSuccess(result: Record<string, unknown>) {
-  return (file: unknown, _options: unknown, cb: (r: unknown) => void) => {
-    cb({ ...result });
+  return (_file: unknown, _options: unknown, cb: SdkCallback) => {
+    cb(undefined, { ...result });
   };
 }
 function sdkFailure(cloudinaryError: { message: string; http_code?: number }) {
-  return (file: unknown, _options: unknown, cb: (r: unknown) => void) => {
-    cb({ error: cloudinaryError });
+  return (_file: unknown, _options: unknown, cb: SdkCallback) => {
+    cb(cloudinaryError);
   };
 }
 
@@ -60,11 +66,17 @@ describe("POST /api/upload", () => {
     mocks.upload.mockReset();
     mocks.uploadLarge.mockReset();
     mocks.destroy.mockReset();
+    // Reproduce the reported Render state: all three expected names exist.
+    vi.stubEnv("CLOUDINARY_CLOUD_NAME", "test-cloud");
+    vi.stubEnv("CLOUDINARY_API_KEY", "test-key");
+    vi.stubEnv("CLOUDINARY_API_SECRET", "test-secret");
   });
 
-  it("saves media when Cloudinary's callback delivers a success result (single-arg contract)", async () => {
-    // This is the exact shape the v2.x SDK produces on success:
-    // callback({ secure_url, public_id, ... }) — one argument.
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("saves media with an undefined error and a success result in the second argument", async () => {
     mocks.upload.mockImplementation(
       sdkSuccess({
         secure_url: "https://res.cloudinary.com/demo/image/upload/v16000/pic",
@@ -87,10 +99,18 @@ describe("POST /api/upload", () => {
     expect(res.status).toBe(200);
     expect(res.body.filename).toBe("pic.jpg");
     expect(res.body.path).toContain("signed");
+    expect(res.body.cloudinaryPublicId).toBe("pic");
     expect(fakeStorage.media.size).toBe(1);
+    expect(mocks.upload).toHaveBeenCalledOnce();
+    expect(mocks.upload.mock.calls[0][1]).toMatchObject({
+      resource_type: "image",
+      type: "authenticated",
+      disable_promises: true,
+    });
+    expect(existsSync(mocks.upload.mock.calls[0][0])).toBe(false);
   });
 
-  it("saves video media via upload_large (single-arg contract)", async () => {
+  it("saves video media via upload_large with the error-first callback", async () => {
     mocks.uploadLarge.mockImplementation(
       sdkSuccess({
         secure_url: "https://res.cloudinary.com/demo/video/upload/v16000/clip",
@@ -113,7 +133,79 @@ describe("POST /api/upload", () => {
     expect(res.status).toBe(200);
     expect(res.body.type).toBe("video/mp4");
     expect(mocks.uploadLarge).toHaveBeenCalledOnce();
+    expect(mocks.upload).not.toHaveBeenCalled();
+    expect(mocks.uploadLarge.mock.calls[0][1]).toMatchObject({
+      resource_type: "video",
+      type: "authenticated",
+      chunk_size: 6 * 1024 * 1024,
+      disable_promises: true,
+    });
+    expect(existsSync(mocks.uploadLarge.mock.calls[0][0])).toBe(false);
     expect(fakeStorage.media.size).toBe(1);
+  });
+
+  it("also accepts a null error with a result in the second argument", async () => {
+    mocks.upload.mockImplementation((_file: unknown, _opts: unknown, cb: SdkCallback) => {
+      cb(null, {
+        secure_url: "https://res.cloudinary.com/demo/image/authenticated/null-error",
+        public_id: "null-error",
+      });
+    });
+
+    const agent = request.agent(await buildTestApp());
+    await agent.post("/api/auth/signup").send({
+      email: "null-error@example.com",
+      password: "correct-horse-battery",
+    });
+
+    const res = await agent.post("/api/upload").attach("file", tinyJpeg, "pic.jpg");
+
+    expect(res.status).toBe(200);
+    expect(mocks.upload).toHaveBeenCalledOnce();
+    expect(fakeStorage.media.size).toBe(1);
+  });
+
+  it("returns 502 and cleans up when both callback arguments are genuinely missing", async () => {
+    mocks.upload.mockImplementation((_file: unknown, _opts: unknown, cb: SdkCallback) => {
+      cb(undefined, undefined);
+    });
+
+    const agent = request.agent(await buildTestApp());
+    await agent.post("/api/auth/signup").send({
+      email: "empty-result@example.com",
+      password: "correct-horse-battery",
+    });
+
+    const res = await agent.post("/api/upload").attach("file", tinyJpeg, "pic.jpg");
+
+    expect(res.status).toBe(502);
+    expect(res.body.message).toContain("Cloudinary upload returned empty response");
+    expect(res.body.message).toContain("CLOUDINARY_CLOUD_NAME=true");
+    expect(res.body.message).toContain("CLOUDINARY_API_KEY=true");
+    expect(res.body.message).toContain("CLOUDINARY_API_SECRET=true");
+    expect(res.body.message).not.toContain("test-key");
+    expect(res.body.message).not.toContain("test-secret");
+    expect(mocks.upload).toHaveBeenCalledTimes(2);
+    expect(fakeStorage.media.size).toBe(0);
+    expect(existsSync(mocks.upload.mock.calls[0][0])).toBe(false);
+  });
+
+  it("rejects a response without an asset identity instead of saving phantom media", async () => {
+    mocks.upload.mockImplementation(sdkSuccess({}));
+
+    const agent = request.agent(await buildTestApp());
+    await agent.post("/api/auth/signup").send({
+      email: "missing-identity@example.com",
+      password: "correct-horse-battery",
+    });
+
+    const res = await agent.post("/api/upload").attach("file", tinyJpeg, "pic.jpg");
+
+    expect(res.status).toBe(502);
+    expect(res.body.message).toContain("unexpected response");
+    expect(mocks.upload).toHaveBeenCalledTimes(2);
+    expect(fakeStorage.media.size).toBe(0);
+    expect(existsSync(mocks.upload.mock.calls[0][0])).toBe(false);
   });
 
   it("surfaces the real Cloudinary error (e.g. its 403) instead of a generic 500", async () => {
@@ -242,12 +334,12 @@ describe("POST /api/upload", () => {
 
   it("retries once and succeeds after a transient failure", async () => {
     let callCount = 0;
-    mocks.upload.mockImplementation((file: unknown, _opts: unknown, cb: (r: unknown) => void) => {
+    mocks.upload.mockImplementation((_file: unknown, _opts: unknown, cb: SdkCallback) => {
       callCount++;
       if (callCount === 1) {
-        cb({ error: { message: "Transient error", http_code: 500 } });
+        cb({ message: "Transient error", http_code: 500 });
       } else {
-        cb({
+        cb(undefined, {
           secure_url: "https://res.cloudinary.com/demo/image/upload/v16000/retry-ok",
           public_id: "retry-ok",
           resource_type: "image",
@@ -337,8 +429,8 @@ describe("POST /api/upload", () => {
   });
 
   it("recovers when Cloudinary returns only public_id (no secure_url/url) by generating url from public_id", async () => {
-    // This is the exact failure the user reported: env present true/true/true
-    // but response missing secure_url/url. We now generate url from public_id.
+    // Preserve the defensive URL fallback when the response has an identity
+    // but no delivery URL.
     mocks.upload.mockImplementation(
       sdkSuccess({
         public_id: "only-public-id",
@@ -362,9 +454,9 @@ describe("POST /api/upload", () => {
     expect(res.body.filename).toBe("only-public.jpg");
   });
 
-  it("handles top-level Cloudinary error shape {message, http_code, name} (no wrapped .error)", async () => {
-    // Real-world case from screenshot: keys message,http_code,name
-    mocks.upload.mockImplementation((file: unknown, _opts: unknown, cb: (r: unknown) => void) => {
+  it("handles a Cloudinary error in the first callback argument", async () => {
+    // The v2 adapter unwraps the API's .error before calling our callback.
+    mocks.upload.mockImplementation((_file: unknown, _opts: unknown, cb: SdkCallback) => {
       cb({
         message: "File size too large",
         http_code: 400,

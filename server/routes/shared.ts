@@ -5,6 +5,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import rateLimit from "express-rate-limit";
 import multer from "multer";
+import type { UploadApiOptions, UploadApiResponse, UploadResponseCallback } from "cloudinary";
 import cloudinary from "../cloudinary";
 import { authenticateFlexible, verifyAlbumUnlockToken } from "../jwt";
 import type { Album } from "@shared/schema";
@@ -218,12 +219,10 @@ export function diagnoseCloudinaryError(err: { message?: string; http_code?: num
 }
 
 function getCloudinaryEnvStatus(): string {
-  const present = {
-    cloud_name: !!process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: !!process.env.CLOUDINARY_API_KEY,
-    api_secret: !!process.env.CLOUDINARY_API_SECRET,
-  };
-  return `env present cloud_name=${present.cloud_name} api_key=${present.api_key} api_secret=${present.api_secret}`;
+  // Use the actual Render variable names, not the SDK's lower-case option
+  // names. Report presence only — never log credential values.
+  const names = ["CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"];
+  return `env present ${names.map((name) => `${name}=${!!process.env[name]}`).join(" ")}`;
 }
 
 // Helper function to upload a file already on disk (see multer diskStorage
@@ -242,19 +241,16 @@ function getCloudinaryEnvStatus(): string {
 // chunking overhead.
 const CHUNK_SIZE_BYTES = 6 * 1024 * 1024; // 6MB chunks
 
-type CloudinarySuccess = {
-  secure_url?: string;
-  url?: string;
-  public_id?: string;
-  [key: string]: any;
-};
-
 export async function uploadToCloudinary(
   filePath: string,
   filename: string,
   resourceType: 'image' | 'video'
 ): Promise<{ url: string; publicId: string; resourceType: 'image' | 'video' }> {
-  const uploadOptions: any = {
+  const uploadOptions: UploadApiOptions = {
+    // This helper owns the Promise and handles errors via the callback.
+    // Otherwise the SDK also rejects an unused internal Promise on failure,
+    // which can become an unhandled rejection (including for upload_large).
+    disable_promises: true,
     resource_type: resourceType,
     folder: 'cloudmediavault',
     public_id: filename.split('.')[0],
@@ -288,41 +284,32 @@ export async function uploadToCloudinary(
   try {
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
-        const result = await new Promise<CloudinarySuccess>((resolve, reject) => {
-          // IMPORTANT: the Cloudinary v2.x SDK invokes the uploader callback with
-          // a SINGLE argument — the result object — not the old (error, result)
-          // two-argument style. On success it's the plain result
-          // ({ secure_url, public_id, ... }); on failure it carries an `.error`
-          // field ({ message, http_code, ... }). Treating the first argument as
-          // "the error" (as the old code did) meant every SUCCESSFUL upload was
-          // rejected as a failure (the client saw a 500 on every upload) and
-          // every real Cloudinary error (including a 403 from Cloudinary itself)
-          // was swallowed into a generic 500 with no details.
-          //
-          // REAL WORLD: we have also seen Cloudinary return a TOP-LEVEL error
-          // shape { message, http_code, name } without a wrapping .error
-          // (keys: message,http_code,name) — this was surfacing as
-          // "missing secure_url/url" instead of the real Cloudinary message.
-          // Handle both shapes.
-          const callback = (res: any) => {
-            // Shape 1: { error: { message, http_code, ... } }
-            if (res && res.error) {
-              const diagnosis = diagnoseCloudinaryError(res.error);
-              const baseMsg = res.error.message || "unknown error";
-              const httpPart = typeof res.error.http_code === "number" ? ` (Cloudinary HTTP ${res.error.http_code})` : "";
+        const result = await new Promise<UploadApiResponse>((resolve, reject) => {
+          // ../cloudinary exports v2, whose public API is error-first:
+          // callback(undefined, result) on success, callback(error) on failure.
+          // The single-result callback belongs to the internal v1 uploader.
+          // Reading only the first v2 argument discards every success result
+          // and incorrectly reports an "empty response" even with valid env.
+          const callback: UploadResponseCallback = (error, res) => {
+            if (error) {
+              const diagnosis = diagnoseCloudinaryError(error);
+              const baseMsg = error.message || "unknown error";
+              const httpPart = typeof error.http_code === "number" ? ` (Cloudinary HTTP ${error.http_code})` : "";
               const diagPart = diagnosis ? ` - ${diagnosis}` : "";
-              const cloudinaryError: any = new Error(`Cloudinary upload failed: ${baseMsg}${httpPart}${diagPart}`);
-              cloudinaryError.status = 502;
-              cloudinaryError.cloudinaryHttpCode = res.error.http_code ?? null;
-              cloudinaryError.cloudinaryRawMessage = baseMsg;
-              cloudinaryError.diagnosis = diagnosis;
-              // Extra structured log for Render — makes misconfig visible without leaking secrets
+              const cloudinaryError = Object.assign(
+                new Error(`Cloudinary upload failed: ${baseMsg}${httpPart}${diagPart}`),
+                {
+                  status: 502,
+                  cloudinaryHttpCode: error.http_code ?? null,
+                  cloudinaryRawMessage: baseMsg,
+                  diagnosis,
+                },
+              );
               console.error("[cloudinary] upload error", {
                 attempt,
-                shape: "wrapped.error",
                 message: baseMsg,
-                http_code: res.error.http_code ?? null,
-                name: res.error.name ?? null,
+                http_code: error.http_code ?? null,
+                name: error.name ?? null,
                 diagnosis,
                 env: getCloudinaryEnvStatus(),
                 filename,
@@ -332,43 +319,16 @@ export async function uploadToCloudinary(
               return;
             }
 
-            // Shape 2: top-level error { message, http_code, name } without secure_url/public_id/url
-            // This is what the user screenshot shows: keys message,http_code,name
-            if (res && typeof res.message === "string" && (typeof res.http_code === "number" || typeof res.name === "string") && !res.secure_url && !res.url && !res.public_id) {
-              const diagnosis = diagnoseCloudinaryError(res);
-              const baseMsg = res.message || "unknown error";
-              const httpPart = typeof res.http_code === "number" ? ` (Cloudinary HTTP ${res.http_code})` : "";
-              const diagPart = diagnosis ? ` - ${diagnosis}` : "";
-              const cloudinaryError: any = new Error(`Cloudinary upload failed: ${baseMsg}${httpPart}${diagPart}`);
-              cloudinaryError.status = 502;
-              cloudinaryError.cloudinaryHttpCode = res.http_code ?? null;
-              cloudinaryError.cloudinaryRawMessage = baseMsg;
-              cloudinaryError.diagnosis = diagnosis;
-              console.error("[cloudinary] upload error", {
-                attempt,
-                shape: "top-level",
-                message: baseMsg,
-                http_code: res.http_code ?? null,
-                name: res.name ?? null,
-                diagnosis,
-                env: getCloudinaryEnvStatus(),
-                filename,
-                resourceType,
-                keys: Object.keys(res).slice(0, 20),
-              });
-              reject(cloudinaryError);
-              return;
-            }
-
-            // Shape 3: null/undefined or empty
             if (!res || typeof res !== "object") {
-              const cloudinaryError: any = new Error(`Cloudinary upload returned empty response - ${getCloudinaryEnvStatus()}`);
-              cloudinaryError.status = 502;
+              const cloudinaryError = Object.assign(
+                new Error(`Cloudinary upload returned empty response - ${getCloudinaryEnvStatus()}`),
+                { status: 502 },
+              );
               console.error("[cloudinary] empty response", {
                 attempt,
-                res,
                 env: getCloudinaryEnvStatus(),
                 filename,
+                resourceType,
               });
               reject(cloudinaryError);
               return;
@@ -388,17 +348,14 @@ export async function uploadToCloudinary(
         // versions) may return `url` instead of `secure_url`. Accept either,
         // preferring secure_url. This prevents a false 502 when the upload
         // actually succeeded but used the non-secure field.
-        // Additionally, if BOTH url fields are missing but public_id IS present,
-        // we can still recover by generating a URL via cloudinary.url() — this
-        // is the case the user hit: "missing secure_url/url" even though env
-        // vars were all present. That response is still a successful upload;
-        // we should not turn it into a 502.
-        let effectiveUrl = (result as any)?.secure_url || (result as any)?.url;
-        const publicId = (result as any)?.public_id;
+        // If both URL fields are missing but public_id is present, preserve
+        // the defensive fallback that generates a URL via cloudinary.url().
+        let effectiveUrl = result.secure_url || result.url;
+        const publicId = result.public_id;
 
         // Extra diagnostics: log the actual shape we got when something is missing
         if (!effectiveUrl || !publicId) {
-          const keys = result && typeof result === "object" ? Object.keys(result as any).slice(0, 20) : [];
+          const keys = result && typeof result === "object" ? Object.keys(result).slice(0, 20) : [];
           const preview = (() => {
             try {
               return JSON.stringify(result).slice(0, 500);
@@ -408,8 +365,8 @@ export async function uploadToCloudinary(
           })();
           console.error("[cloudinary] unexpected response shape", {
             attempt,
-            hasSecureUrl: !!(result as any)?.secure_url,
-            hasUrl: !!(result as any)?.url,
+            hasSecureUrl: !!result.secure_url,
+            hasUrl: !!result.url,
             hasPublicId: !!publicId,
             keys,
             preview,
@@ -461,17 +418,17 @@ export async function uploadToCloudinary(
 
         if (!effectiveUrl || !publicId) {
           const missing = new Error(
-            `Cloudinary upload returned an unexpected response (missing ${!effectiveUrl ? "secure_url/url" : "public_id"}) - ${getCloudinaryEnvStatus()} - keys: ${result && typeof result === "object" ? Object.keys(result as any).join(",") : "no-object"}`
+            `Cloudinary upload returned an unexpected response (missing ${!effectiveUrl ? "secure_url/url" : "public_id"}) - ${getCloudinaryEnvStatus()} - keys: ${result && typeof result === "object" ? Object.keys(result).join(",") : "no-object"}`
           ) as any;
           missing.status = 502;
           throw missing;
         }
 
-        if (!(result as any).secure_url && (result as any).url) {
+        if (!result.secure_url && result.url) {
           console.warn("[cloudinary] secure_url missing, fell back to url", {
             attempt,
             filename,
-            url: (result as any).url,
+            url: result.url,
           });
         }
 
