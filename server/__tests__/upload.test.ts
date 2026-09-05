@@ -210,4 +210,129 @@ describe("POST /api/upload", () => {
     expect(res.status).toBe(200);
     expect(fakeStorage.media.size).toBe(1);
   });
+
+  // --- New in 6458d17: secure_url fallback, one retry, self-diagnosing ---
+
+  it("uses url fallback when secure_url is missing but url is present", async () => {
+    // Some Cloudinary responses / older SDKs may return `url` instead of `secure_url`
+    mocks.upload.mockImplementation(
+      sdkSuccess({
+        url: "https://res.cloudinary.com/demo/image/upload/v16000/fallback",
+        public_id: "fallback",
+        resource_type: "image",
+      })
+    );
+
+    const app = await buildTestApp();
+    const agent = request.agent(app);
+    await agent.post("/api/auth/signup").send({
+      email: "fallback@example.com",
+      password: "correct-horse-battery",
+    });
+
+    const res = await agent
+      .post("/api/upload")
+      .attach("file", tinyJpeg, "fallback.jpg");
+
+    expect(res.status).toBe(200);
+    expect(fakeStorage.media.size).toBe(1);
+    // path is signed URL derived from public_id, but the upload itself should succeed via fallback
+    expect(res.body.filename).toBe("fallback.jpg");
+  });
+
+  it("retries once and succeeds after a transient failure", async () => {
+    let callCount = 0;
+    mocks.upload.mockImplementation((file: unknown, _opts: unknown, cb: (r: unknown) => void) => {
+      callCount++;
+      if (callCount === 1) {
+        cb({ error: { message: "Transient error", http_code: 500 } });
+      } else {
+        cb({
+          secure_url: "https://res.cloudinary.com/demo/image/upload/v16000/retry-ok",
+          public_id: "retry-ok",
+          resource_type: "image",
+        });
+      }
+    });
+
+    const app = await buildTestApp();
+    const agent = request.agent(app);
+    await agent.post("/api/auth/signup").send({
+      email: "retry@example.com",
+      password: "correct-horse-battery",
+    });
+
+    const res = await agent
+      .post("/api/upload")
+      .attach("file", tinyJpeg, "retry.jpg");
+
+    expect(res.status).toBe(200);
+    expect(callCount).toBe(2);
+    expect(fakeStorage.media.size).toBe(1);
+  });
+
+  it("returns 502 after retry exhausted (both attempts fail)", async () => {
+    mocks.upload.mockImplementation(
+      sdkFailure({ message: "Service unavailable", http_code: 503 })
+    );
+
+    const app = await buildTestApp();
+    const agent = request.agent(app);
+    await agent.post("/api/auth/signup").send({
+      email: "retry-fail@example.com",
+      password: "correct-horse-battery",
+    });
+
+    const res = await agent
+      .post("/api/upload")
+      .attach("file", tinyJpeg, "fail.jpg");
+
+    expect(res.status).toBe(502);
+    expect(res.body.message).toContain("Service unavailable");
+    // Should have attempted twice (one retry)
+    expect(mocks.upload).toHaveBeenCalledTimes(2);
+    expect(fakeStorage.media.size).toBe(0);
+  });
+
+  it("self-diagnoses api_key error with helpful hint mentioning CLOUDINARY_API_KEY", async () => {
+    mocks.upload.mockImplementation(
+      sdkFailure({ message: "Invalid API key", http_code: 401 })
+    );
+
+    const app = await buildTestApp();
+    const agent = request.agent(app);
+    await agent.post("/api/auth/signup").send({
+      email: "diag-apikey@example.com",
+      password: "correct-horse-battery",
+    });
+
+    const res = await agent
+      .post("/api/upload")
+      .attach("file", tinyJpeg, "diag.jpg");
+
+    expect(res.status).toBe(502);
+    expect(res.body.message).toContain("Invalid API key");
+    expect(res.body.message).toContain("CLOUDINARY_API_KEY");
+  });
+
+  it("self-diagnoses cloud_name / unknown account error with helpful hint mentioning CLOUDINARY_CLOUD_NAME", async () => {
+    mocks.upload.mockImplementation(
+      sdkFailure({ message: "Unknown cloud_name", http_code: 404 })
+    );
+
+    const app = await buildTestApp();
+    const agent = request.agent(app);
+    await agent.post("/api/auth/signup").send({
+      email: "diag-cloudname@example.com",
+      password: "correct-horse-battery",
+    });
+
+    const res = await agent
+      .post("/api/upload")
+      .attach("file", tinyJpeg, "diag2.jpg");
+
+    expect(res.status).toBe(502);
+    expect(res.body.message).toContain("cloud_name");
+    expect(res.body.message).toContain("CLOUDINARY_CLOUD_NAME");
+  });
 });
